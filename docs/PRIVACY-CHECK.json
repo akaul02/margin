@@ -1,0 +1,14 @@
+{
+  "date": "2026-10-03",
+  "files_scanned": 36,
+  "scope": "Source, server, tests, documentation, manifests and generated production assets; no credentials or private browser/server data read.",
+  "findings": [],
+  "fixtures": "Only explicitly synthetic library/garden conversations and synthetic test strings.",
+  "git_repository": false,
+  "private_runtime_directories_excluded_from_delivery": [
+    ".margin-shared",
+    ".margin-shared-preview"
+  ],
+  "commits_created": 0,
+  "published_or_pushed": false
+}
