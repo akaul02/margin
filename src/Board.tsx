@@ -61,13 +61,6 @@ export function groupPapers(groups: BoardGroup[]) {
   }
   return papers;
 }
-/** A stable 0–1 value per card, so each one keeps the same slight tilt. */
-function hash(s: string) {
-  let x = 2166136261;
-  for (let i = 0; i < s.length; i++) x = Math.imul(x ^ s.charCodeAt(i), 16777619);
-  return (x >>> 0) / 4294967295;
-}
-const tilt = (id: string) => ({ '--tilt': `${(hash(id) * 3 - 1.5).toFixed(2)}deg`, '--nudge': `${Math.round(hash(`${id}~`) * 10 - 5)}px` }) as CSSProperties;
 /** "P04 session" reads as just "P04" on a sticky. */
 const participant = (name = '') => name.replace(/\s+session$/i, '');
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -112,7 +105,6 @@ export function QuoteBoard({
     [tileOver, setTileOver] = useState(''),
     [writing, setWriting] = useState<{ group: string; id?: string } | null>(null),
     [expanded, setExpanded] = useState<Set<string>>(() => new Set()),
-    [inView, setInView] = useState<Set<string>>(() => new Set()),
     [settled, setSettled] = useState(''),
     [flash, setFlash] = useState('');
   const wall = useRef<HTMLDivElement>(null);
@@ -157,33 +149,6 @@ export function QuoteBoard({
       .map(g => ({ id: g.id, title: g.title, name: indexed ? splitTitle(g.title).name : g.title, note: g.note, quoteIds: g.quoteIds, noteIds: g.noteIds ?? [], paper: papers[g.id] })),
   ];
 
-  // The map outlines the groups whose columns are on screen.
-  const columnKey = columns.map(c => c.id).join('|');
-  useEffect(() => {
-    const el = wall.current;
-    if (!el) return;
-    let frame = 0;
-    const sync = () => {
-      const left = el.scrollLeft,
-        right = left + el.clientWidth;
-      const seen = new Set<string>();
-      for (const col of el.querySelectorAll<HTMLElement>('.board-group'))
-        if (col.offsetLeft < right - 40 && col.offsetLeft + col.offsetWidth > left + 40) seen.add(col.dataset.group!);
-      setInView(prev => (prev.size === seen.size && [...seen].every(id => prev.has(id)) ? prev : seen));
-    };
-    const later = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(sync);
-    };
-    sync();
-    el.addEventListener('scroll', later, { passive: true });
-    addEventListener('resize', later);
-    return () => {
-      cancelAnimationFrame(frame);
-      el.removeEventListener('scroll', later);
-      removeEventListener('resize', later);
-    };
-  }, [columnKey]);
   useEffect(() => {
     if (!settled && !flash) return;
     const t = setTimeout(() => {
@@ -294,7 +259,6 @@ export function QuoteBoard({
         data-id={id}
         data-quote-id={id}
         draggable
-        style={tilt(id)}
         onDragStart={e => startDrag(e, 'quote', id)}
         onDragEnd={endDrag}
         onClick={e => {
@@ -340,7 +304,6 @@ export function QuoteBoard({
         data-kind="note"
         data-id={id}
         draggable
-        style={tilt(id)}
         title="Click to edit"
         onDragStart={e => startDrag(e, 'note', id)}
         onDragEnd={endDrag}
@@ -520,7 +483,7 @@ export function QuoteBoard({
                 <button
                   key={c.id}
                   type="button"
-                  className={`map-tile${c.id === UNGROUPED ? ' ungrouped' : ''}${inView.has(c.id) ? ' in-view' : ''}${tileOver === c.id ? ' drop-target' : ''}${flash === c.id ? ' flash' : ''}`}
+                  className={`map-tile${c.id === UNGROUPED ? ' ungrouped' : ''}${tileOver === c.id ? ' drop-target' : ''}${flash === c.id ? ' flash' : ''}`}
                   style={{ '--sticky': c.paper, '--size': Math.max(4, c.quoteIds.length + c.noteIds.length) } as CSSProperties}
                   title={c.name}
                   onClick={() => jumpTo(c.id)}

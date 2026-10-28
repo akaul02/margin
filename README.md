@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="docs/images/ceal.png" width="112" alt="Ceal, the CEAL seal">
+  <img src="docs/images/ceal.png" width="112" alt="Ceal the seal">
 </p>
 
 <h1 align="center">Margin</h1>
 
 <p align="center">
-  A quote board for qualitative interview analysis, from <a href="https://ceal.cs.columbia.edu/people/">CEAL</a> at Columbia University.
+  A quote board for qualitative interview analysis.
   <br>
   <a href="https://ceal-margin.vercel.app"><b>Try the demo</b></a> · <a href="docs/HOSTING.md">Host it for your lab</a>
 </p>
@@ -18,7 +18,7 @@ Margin is for reading interviews closely and sorting what participants said. Quo
 <table>
   <tr>
     <td width="50%"><img src="docs/images/reader.png" alt="The transcript reader with a selected passage and the panel for filing it into a group"></td>
-    <td width="50%"><img src="docs/images/tour.gif" alt="Ceal, the lab's seal, guiding the first steps of the tour"></td>
+    <td width="50%"><img src="docs/images/tour.gif" alt="Ceal the seal guiding the first steps of the tour"></td>
   </tr>
   <tr>
     <td>Select a participant's words, then click a group or press its key to file them.</td>
