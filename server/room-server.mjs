@@ -14,8 +14,10 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { applyOperation, assertImmutableSources, canonical, validateOperation } from '../shared/operations.mjs';
+import { sameKey } from './store.mjs';
 
 const MAX_BODY_BYTES = 17_000_000; // UTF-8 bytes on the wire
+const MAX_STORE_BYTES = 256_000_000; // a whole workspace with its newest restore point
 const MAX_PROJECT_BYTES = 16_000_000; // canonical export per snapshot
 const MAX_HISTORY_POINTS = 20;
 const MAX_HISTORY_BYTES = 20_000_000;
@@ -142,7 +144,7 @@ function readBody(req, limit) {
   });
 }
 
-export async function startRoomServer({ port = 0, dataDir, allowedOrigins, validateProject, exportProject } = {}) {
+export async function startRoomServer({ port = 0, dataDir, allowedOrigins, validateProject, exportProject, store, storeKey } = {}) {
   if (!isNonEmptyString(dataDir)) throw new TypeError('dataDir is required');
   if (typeof validateProject !== 'function') throw new TypeError('validateProject is required');
   if (typeof exportProject !== 'function') throw new TypeError('exportProject is required');
@@ -656,6 +658,59 @@ export async function startRoomServer({ port = 0, dataDir, allowedOrigins, valid
     }
   }
 
+  // ----------------------------------------------------------- data file --
+
+  /**
+   * The local data file (server/store.mjs). GET /api/store says whether this
+   * server keeps one; everything else needs the key from the data folder,
+   * which only this account can read.
+   */
+  async function handleStore(req, res, rest, method) {
+    const unlocked = sameKey(req.headers['x-margin-key'] ?? '', storeKey);
+    if (rest.length === 0) {
+      if (method !== 'GET') throw new HttpError(405, 'method_not_allowed');
+      return sendJson(res, 200, { storage: 'file', unlocked, ...(unlocked ? { path: store.file } : {}) });
+    }
+    if (!unlocked) throw new HttpError(401, 'locked');
+    const body = async () => {
+      const read = await readBody(req, MAX_STORE_BYTES);
+      if (!read.ok) throw new HttpError(read.status, read.code);
+      try {
+        return JSON.parse(read.buf.toString('utf8'));
+      } catch {
+        throw new HttpError(400, 'invalid_json');
+      }
+    };
+    const isWorkspace = w => w && typeof w === 'object' && Array.isArray(w.projects) && typeof w.revision === 'string';
+    const [name, id] = rest;
+    if (name === 'workspace' && rest.length === 1) {
+      if (method === 'GET') return sendJson(res, 200, { workspace: store.workspace() });
+      if (method !== 'PUT') throw new HttpError(405, 'method_not_allowed');
+      const { next, expectedRevision, point } = await body();
+      if (!isWorkspace(next) || typeof expectedRevision !== 'string') throw new HttpError(400, 'invalid_body');
+      if (point !== undefined && typeof point?.project?.id !== 'string') throw new HttpError(400, 'invalid_body');
+      if (!store.save({ next, expectedRevision, point })) throw new HttpError(409, 'conflict');
+      return sendJson(res, 200, { ok: true });
+    }
+    if (name === 'delete-project' && rest.length === 1 && method === 'POST') {
+      const { next, expectedRevision, projectId } = await body();
+      if (!isWorkspace(next) || typeof expectedRevision !== 'string' || typeof projectId !== 'string')
+        throw new HttpError(400, 'invalid_body');
+      if (!store.deleteProject({ next, expectedRevision, projectId })) throw new HttpError(409, 'conflict');
+      return sendJson(res, 200, { ok: true });
+    }
+    if (name === 'history' && rest.length === 2 && method === 'GET') {
+      if (!/^[\w-]{1,100}$/.test(id)) throw new HttpError(404, 'not_found');
+      return sendJson(res, 200, store.history(id));
+    }
+    if (name === 'import' && rest.length === 1 && method === 'POST') {
+      const { workspace, entries } = await body();
+      if (!isWorkspace(workspace) || !entries || typeof entries !== 'object') throw new HttpError(400, 'invalid_body');
+      return sendJson(res, 200, { added: store.importBrowser({ workspace, entries }) });
+    }
+    throw new HttpError(404, 'not_found');
+  }
+
   // -------------------------------------------------------------- dispatch --
 
   async function route(req, res) {
@@ -689,6 +744,7 @@ export async function startRoomServer({ port = 0, dataDir, allowedOrigins, valid
       return;
     }
 
+    if (segments[1] === 'store' && store) return handleStore(req, res, segments.slice(2), method);
     if (segments[1] !== 'rooms') throw new HttpError(404, 'not_found');
 
     // POST /api/rooms

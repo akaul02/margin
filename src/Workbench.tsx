@@ -711,7 +711,7 @@ export function HistoryPanel({
       </div>
       <div className="method-note">
         The latest 20 restore points are kept on this device, within a 20 MB limit per project. Older points are pruned as you work. Project
-        exports include your current work; restore points stay in this browser. Keep separate backups for long-term records.
+        exports include your current work; restore points stay on this computer. Keep separate backups for long-term records.
       </div>
       <ErrorBox error={error} />
       {!history && !error && <p role="status">Reading restore points…</p>}

@@ -72,6 +72,7 @@ import { QuoteBoard, JoinRoomDialog, GroupDialog, groupPapers, splitTitle } from
 import { Tip, useTips, groupKeys, forgetProjectPrefs, Kbd, UNGROUPED_KEY } from './guidance';
 import { demoProject } from './demo';
 import { useWorkspaceServices } from './WorkspaceContext';
+import type { SavedIn } from './storage';
 import { NewProjectDialog } from './dialogs/NewProjectDialog';
 import { ImportDialog } from './dialogs/ImportDialog';
 import { RestoreDialog } from './dialogs/RestoreDialog';
@@ -90,7 +91,7 @@ type View = 'board' | 'read' | 'quotes' | 'memos' | 'workbench';
 export default function App() {
   const services = useWorkspaceServices(),
     { hosted } = services;
-  const { loadWorkspace, rawWorkspace, saveWorkspace, deleteProjectStorage } = services.storage;
+  const { loadWorkspace, rawWorkspace, saveWorkspace, deleteProjectStorage, savedIn } = services.storage;
   const { createRoom, readRoom, writeRoom, watchRoom, sendOperation, assertShareableProject, assertShareableEdit } = services.collaboration;
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const workspaceRef = useRef<Workspace | null>(null);
@@ -100,6 +101,7 @@ export default function App() {
   const [loadError, setLoadError] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [savedTo, setSavedTo] = useState<SavedIn>({ kind: 'browser' });
   const [saving, setSaving] = useState(false);
   const lock = useRef(false);
   const [view, setView] = useState<View>(() => {
@@ -178,7 +180,13 @@ export default function App() {
   }, [view]);
   useEffect(() => {
     loadWorkspace()
-      .then(setWorkspace)
+      .then(async loaded => {
+        const where = await savedIn();
+        setSavedTo(where);
+        if (where.kind === 'file' && where.moved)
+          setNotice(`Moved ${plural(where.moved, 'project')} from this browser into Margin's data file on this computer.`);
+        setWorkspace(loaded);
+      })
       .catch(e => setLoadError(String(e.message ?? e)));
   }, []);
   useEffect(() => {
@@ -882,7 +890,7 @@ export default function App() {
         </nav>
         <div className="header-actions">
           {project && connection?.dirty && (
-            <span className="save-state" title="Your latest edits are saved in this browser but not shared yet.">
+            <span className="save-state" title="Your latest edits are saved on this computer but not shared yet.">
               Not shared yet
             </span>
           )}
@@ -980,7 +988,9 @@ export default function App() {
               <span>
                 {hosted
                   ? 'Projects stay in your browser until you share them with people you invite. No AI analysis.'
-                  : 'Data stays in this browser. No accounts, uploads, or AI analysis.'}
+                  : savedTo.kind === 'file'
+                    ? 'Data stays in a file on this computer. No accounts, uploads, or AI analysis.'
+                    : 'Data stays in this browser. No accounts, uploads, or AI analysis.'}
               </span>
             </div>
           </div>
@@ -1571,7 +1581,11 @@ export default function App() {
       {modal === 'join' && <JoinRoomDialog join={joinSharing} close={() => setModal(null)} />}
       {modal === 'new' && <NewProjectDialog close={() => setModal(null)} create={p => openProject(p, true)} error={error} />}
       {modal === 'projects' && (
-        <Dialog title="Your local projects" subtitle="Saved in this browser on this device." close={() => setModal(null)}>
+        <Dialog
+          title="Your local projects"
+          subtitle={savedTo.kind === 'file' ? 'Saved in a file on this computer.' : 'Saved in this browser on this device.'}
+          close={() => setModal(null)}
+        >
           <div className="project-list">
             {workspace.projects.map(p => (
               <div className="project-row" key={p.id}>
@@ -1692,8 +1706,10 @@ export default function App() {
             </button>
           </div>
           <p className="small muted">
-            Browser storage can be cleared. Keep regular project backups somewhere you trust. CSV protects spreadsheet formula cells; the
-            JSON backup preserves all text exactly.
+            {savedTo.kind === 'file'
+              ? `Projects are saved in ${savedTo.path}. Keep regular project backups somewhere you trust.`
+              : 'Browser storage can be cleared. Keep regular project backups somewhere you trust.'}{' '}
+            CSV protects spreadsheet formula cells; the JSON backup preserves all text exactly.
           </p>
         </Dialog>
       )}
@@ -1716,7 +1732,9 @@ export default function App() {
           <p className="small muted">
             {hosted
               ? 'Projects save in this browser. Shared projects also save to your lab workspace, visible only to people you invite.'
-              : 'Everything saves in this browser. Use Export now and then to keep a backup file.'}
+              : savedTo.kind === 'file'
+                ? `Everything saves to ${savedTo.path} on this computer. Use Export now and then to keep a backup file too.`
+                : 'Everything saves in this browser. Use Export now and then to keep a backup file.'}
           </p>
           <div className="dialog-actions">
             <button

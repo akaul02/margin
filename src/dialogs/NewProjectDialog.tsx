@@ -7,7 +7,7 @@ export function NewProjectDialog({ close, create, error }: { close: () => void; 
   const [name, setName] = useState('');
   const [localError, setLocalError] = useState('');
   return (
-    <Dialog title="New project" subtitle="Transcripts, codes and notes are saved in this browser." close={close}>
+    <Dialog title="New project" subtitle="Transcripts, codes and notes stay on this computer." close={close}>
       <form
         onSubmit={async e => {
           e.preventDefault();

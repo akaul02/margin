@@ -37,14 +37,29 @@ Margin is for reading interviews closely and sorting what participants said. Quo
 
 ## Run it locally
 
-Requires Node 22.12 or newer.
+Requires Node 22.13 or newer.
 
 ```sh
 npm ci
 npm run dev
+npm run open
 ```
 
-Open http://127.0.0.1:5173. Projects are saved in that browser. `npm run build` followed by `npm run preview` serves the production build on http://127.0.0.1:4178.
+`npm run dev` starts Margin on http://127.0.0.1:5173 and `npm run open` opens it in your browser. `npm run build` followed by `npm run preview` serves the production build on http://127.0.0.1:4178.
+
+## Privacy and where work is saved
+
+Margin is private by default. Work stays on the researcher's own computer unless a lab deliberately sets up hosting, which suits IRB protocols that keep transcripts off outside servers. Margin has no analytics, remote fonts or calls to AI services, and this repository contains only synthetic data.
+
+| | Where projects are saved | Who can open them |
+| --- | --- | --- |
+| [Demo](https://ceal-margin.vercel.app) | This browser's storage | Only this browser. Clearing site data deletes them, so export backups. |
+| Your computer (`npm run dev`) | `margin.sqlite` in Margin's data folder | Your user account. A browser also needs the folder's key, which `npm run open` passes to it. |
+| Hosted, if your lab sets it up | Your lab's own Supabase project | Only accounts you invite, and only for the projects they were added to. |
+
+On your computer, clearing browser data does not touch your projects. The data folder is `~/Library/Application Support/Margin` on macOS, `~/.local/share/margin` on Linux and `%APPDATA%\Margin` on Windows. Set `MARGIN_DATA_DIR` to keep it somewhere else, or `MARGIN_STORAGE=browser` to save in the browser instead. The file is not encrypted, so keep disk encryption (FileVault or BitLocker) on, and export backups now and then. The first time a browser opens the data file, any projects it already had are copied into the file.
+
+Hosting is never switched on from inside the app. It is a separate deployment with sign-in, described in [docs/HOSTING.md](docs/HOSTING.md). Check that your IRB protocol allows a cloud database before uploading real transcripts.
 
 ## Working together
 
@@ -52,13 +67,7 @@ Open http://127.0.0.1:5173. Projects are saved in that browser. `npm run build` 
 | --- | --- | --- |
 | Live session | Browsers on the same computer | A small local server on 127.0.0.1:5180 |
 | Send a copy | Whoever receives the file | A `.margin.json` backup |
-| Hosted | Only the accounts you add | Supabase (Postgres with row-level security), served from Vercel |
-
-Setup for hosted mode is in [docs/HOSTING.md](docs/HOSTING.md). Confirm that your IRB protocol allows a cloud database before uploading real transcripts.
-
-## Privacy
-
-Projects stay in the browser (IndexedDB) until you share them. Margin has no analytics, remote fonts or calls to AI services. This repository contains only synthetic data, and the demo runs entirely in the visitor's browser.
+| Hosted | Only the accounts you add | Your lab's Supabase project (Postgres with row-level security), served from Vercel |
 
 ## Development
 
@@ -67,9 +76,9 @@ npm run typecheck
 npm run format                                          # Prettier
 npm test                                                # unit tests (Vitest)
 npm run build && MARGIN_TEST_PRODUCTION=1 npm run test:browser   # browser tests (Playwright, with axe checks)
-npm run test:hosted:browser                             # hosted mode against a local fixture
+npm run test:hosted:browser                             # hosted mode: the real migration in PostgreSQL, with simulated sign-in
 ```
 
-Margin is built with React, TypeScript and Vite. The data model and its integrity checks are in `src/model.ts`, the board is `src/Board.tsx`, browser storage is `src/storage.ts`, and the shared-edit protocol is `shared/operations.mjs`.
+Margin is built with React, TypeScript and Vite. The data model and its integrity checks are in `src/model.ts`, the board is `src/Board.tsx`, saving is `src/storage.ts` (browser) and `server/store.mjs` (the SQLite file), and the shared-edit protocol is `shared/operations.mjs`.
 
 Related open-source tools: [Taguette](https://www.taguette.org/) and [QualCoder](https://qualcoder.wordpress.com/).
