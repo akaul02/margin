@@ -1,6 +1,16 @@
 import { useWorkspaceServices } from './WorkspaceContext';
 import { HostedHandoffDialog, HostedJoinDialog } from './HostedSharing';
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent, type PointerEvent } from 'react';
+import {
+  Fragment,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type DragEvent,
+  type MouseEvent,
+  type PointerEvent,
+} from 'react';
 import { useDurableDraft } from './drafts';
 import { DraftStatus } from './DraftRecovery';
 import { equal } from '../shared/operations.mjs';
@@ -38,9 +48,8 @@ import {
   type Quote,
 } from './model';
 import { sharingAvailable, type SharedConnection } from './collaboration';
-import { Kbd, UNGROUPED_KEY } from './guidance';
 import { Dialog, Empty, ErrorBox, Field } from './ui';
-import { Evidence, useDraftGuard, type Change } from './Workbench';
+import { Evidence, type Change } from './Workbench';
 export type CollaborationControls = { connection?: SharedConnection; create: () => Promise<void>; join: (id: string) => Promise<void> };
 /** Titles written as "Section · Name" are grouped under their section in the jump bar. */
 export const splitTitle = (title: string) => {
@@ -48,7 +57,23 @@ export const splitTitle = (title: string) => {
   return m ? { section: m[1].trim(), name: m[2] } : { section: '', name: title };
 };
 /** Sticky-note papers, ordered so neighbouring groups never share a hue. */
-const PAPERS = ['#fff2a6', '#ffd3df', '#cde7ff', '#d4f1c5', '#ffd9b3', '#e4daff', '#c6efe4', '#ffcfc7', '#e7f5b3', '#c7eef6', '#f6d0ee', '#efe2cc', '#d6ddff', '#dce8cf', '#ffe3c9'];
+const PAPERS = [
+  '#fff2a6',
+  '#ffd3df',
+  '#cde7ff',
+  '#d4f1c5',
+  '#ffd9b3',
+  '#e4daff',
+  '#c6efe4',
+  '#ffcfc7',
+  '#e7f5b3',
+  '#c7eef6',
+  '#f6d0ee',
+  '#efe2cc',
+  '#d6ddff',
+  '#dce8cf',
+  '#ffe3c9',
+];
 /** Each group's paper, by its place in its section, so a group has one color wherever it appears. */
 export function groupPapers(groups: BoardGroup[]) {
   const count = new Map<string, number>();
@@ -146,7 +171,15 @@ export function QuoteBoard({
     ...(ungrouped.quoteIds.length || ungrouped.noteIds.length ? [ungrouped] : []),
     ...p.boardGroups
       .filter(g => !indexed || splitTitle(g.title).section === section)
-      .map(g => ({ id: g.id, title: g.title, name: indexed ? splitTitle(g.title).name : g.title, note: g.note, quoteIds: g.quoteIds, noteIds: g.noteIds ?? [], paper: papers[g.id] })),
+      .map(g => ({
+        id: g.id,
+        title: g.title,
+        name: indexed ? splitTitle(g.title).name : g.title,
+        note: g.note,
+        quoteIds: g.quoteIds,
+        noteIds: g.noteIds ?? [],
+        paper: papers[g.id],
+      })),
   ];
 
   useEffect(() => {
@@ -277,7 +310,11 @@ export function QuoteBoard({
             <button className="text-button" onClick={() => setOpened({ quote: q, project: p })}>
               Source & notes{count > 0 && <span className="note-count">{count}</span>}
             </button>
-            <button className="text-button" aria-label={`Move card: ${q.text.slice(0, 50)}`} onClick={() => setMoving({ kind: 'quote', id, text: q.text })}>
+            <button
+              className="text-button"
+              aria-label={`Move card: ${q.text.slice(0, 50)}`}
+              onClick={() => setMoving({ kind: 'quote', id, text: q.text })}
+            >
               Move
             </button>
           </span>
@@ -321,7 +358,11 @@ export function QuoteBoard({
             <button className="text-button" onClick={() => setWriting(open)}>
               Edit
             </button>
-            <button className="text-button" aria-label={`Move note: ${n.text.slice(0, 50)}`} onClick={() => setMoving({ kind: 'note', id, text: n.text })}>
+            <button
+              className="text-button"
+              aria-label={`Move note: ${n.text.slice(0, 50)}`}
+              onClick={() => setMoving({ kind: 'note', id, text: n.text })}
+            >
               Move
             </button>
           </span>
@@ -366,7 +407,11 @@ export function QuoteBoard({
                 </button>
               )}
               {c.id !== UNGROUPED && (
-                <button className="group-edit" aria-label={`Edit group ${c.title}`} onClick={() => setGroup(p.boardGroups.find(x => x.id === c.id)!)}>
+                <button
+                  className="group-edit"
+                  aria-label={`Edit group ${c.title}`}
+                  onClick={() => setGroup(p.boardGroups.find(x => x.id === c.id)!)}
+                >
                   <Pencil size={13} aria-hidden="true" />
                   Edit
                 </button>
@@ -691,7 +736,15 @@ export function GroupDialog({
                     g.updatedAt = now();
                   } else {
                     const date = now();
-                    p.boardGroups.push({ id: uid(), title: name, ...(note.trim() ? { note } : {}), color, quoteIds: [], createdAt: date, updatedAt: date });
+                    p.boardGroups.push({
+                      id: uid(),
+                      title: name,
+                      ...(note.trim() ? { note } : {}),
+                      color,
+                      quoteIds: [],
+                      createdAt: date,
+                      updatedAt: date,
+                    });
                   }
                 },
                 original ? 'Board group updated.' : 'Board group created.',
@@ -807,7 +860,11 @@ function MoveDialog({
   return (
     <Dialog
       title={quote ? 'Move this quote card' : 'Move this note'}
-      subtitle={quote ? 'Moving changes its place on the board. The source, codes and notes stay with it.' : 'Moving changes which group it sits in.'}
+      subtitle={
+        quote
+          ? 'Moving changes its place on the board. The source, codes and notes stay with it.'
+          : 'Moving changes which group it sits in.'
+      }
       close={close}
     >
       {quote ? <blockquote className="move-preview">{card.text}</blockquote> : <p className="move-preview">{card.text}</p>}

@@ -107,13 +107,11 @@ export function Workbench({
   change,
   editCode,
   jump,
-  revision,
 }: {
   project: Project;
   change: Change;
   editCode: (code: Code | 'new') => void;
   jump: (q: Quote) => void;
-  revision: string;
 }) {
   const [panel, setPanel] = useState<Panel>('codebook');
   const [group, setGroup] = useState<ThemeGroup | 'new' | null>(null);

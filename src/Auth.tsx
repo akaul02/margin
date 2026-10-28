@@ -197,7 +197,14 @@ function AccountWorkspace({ config }: { config: Config }) {
               }}
             >
               <Field label="Email">
-                <input autoComplete="username" type="email" required value={email} disabled={busy} onChange={e => setEmail(e.target.value)} />
+                <input
+                  autoComplete="username"
+                  type="email"
+                  required
+                  value={email}
+                  disabled={busy}
+                  onChange={e => setEmail(e.target.value)}
+                />
               </Field>
               <Field label="Password">
                 <input

@@ -34,7 +34,16 @@ export type ThemeGroup = {
   updatedAt: string;
 };
 /** `note` is an optional description shown when the column header is opened; `noteIds` orders the board notes filed in it. */
-export type BoardGroup = { id: string; title: string; note?: string; color: number; quoteIds: string[]; noteIds?: string[]; createdAt: string; updatedAt: string };
+export type BoardGroup = {
+  id: string;
+  title: string;
+  note?: string;
+  color: number;
+  quoteIds: string[];
+  noteIds?: string[];
+  createdAt: string;
+  updatedAt: string;
+};
 /** A researcher's own sticky note on the board: interpretation beside the quotes, never evidence. */
 export type BoardNote = { id: string; text: string; by: string; author: 'user'; createdAt: string; updatedAt: string };
 export type BoardComment = { id: string; quoteId: string; by: string; body: string; author: 'user'; createdAt: string; updatedAt: string };

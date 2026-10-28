@@ -1,11 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": [
-      "ES2022",
-      "DOM",
-      "DOM.Iterable"
-    ],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
@@ -16,17 +12,9 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "types": [
-      "vite/client",
-      "node"
-    ]
+    "types": ["vite/client", "node"],
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
   },
-  "include": [
-    "src",
-    "tests",
-    "*.ts",
-    "server/*.ts",
-    "api",
-    "shared/*.ts"
-  ]
+  "include": ["src", "tests", "*.ts", "server/*.ts", "api", "shared/*.ts"]
 }

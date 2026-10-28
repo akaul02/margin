@@ -16,3 +16,10 @@ credentials*
 test-results-hosted
 tests/hosted-fixture/.compiled.mjs
 dist-hosted-test
+
+# Local only: review notes, test screenshots, agent and launcher files
+archive/
+screenshots/
+AGENTS.md
+Open Margin.command
+test-results*/

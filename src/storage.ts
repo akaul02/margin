@@ -67,7 +67,8 @@ export function createWorkspaceStorage(namespace = '') {
             projects,
             connections: connections as Workspace['connections'],
             // null means the reader chose Home; only a missing or stale id falls back to the first project.
-            activeId: data.activeId === null ? null : projects.some(p => p.id === data.activeId) ? data.activeId : (projects[0]?.id ?? null),
+            activeId:
+              data.activeId === null ? null : projects.some(p => p.id === data.activeId) ? data.activeId : (projects[0]?.id ?? null),
             revision: data.revision,
             quarantined,
           });

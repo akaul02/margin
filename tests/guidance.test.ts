@@ -22,7 +22,8 @@ describe('speaker role guesses', () => {
 });
 
 describe('group keys', () => {
-  const groups = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `g${i}`, title: `G${i}`, color: 0, quoteIds: [], createdAt: '', updatedAt: '' }));
+  const groups = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({ id: `g${i}`, title: `G${i}`, color: 0, quoteIds: [], createdAt: '', updatedAt: '' }));
   it('numbers groups 1–9 in board order and never uses 0', () => {
     const keys = groupKeys(newProject('x').id, groups(10), {});
     expect(Object.values(keys)).toEqual(['1', '2', '3', '4', '5', '6', '7', '8', '9']);

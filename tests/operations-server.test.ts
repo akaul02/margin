@@ -33,7 +33,10 @@ async function start() {
 
 function fixture(withNote = false): Project {
   const project = newProject('Synthetic operation server practice', true);
-  const source = makeTranscript('Synthetic source', 'Interviewer: What helped?\r\nParticipant: A green 🌱 sign helped.\r\nIt pointed toward the library.');
+  const source = makeTranscript(
+    'Synthetic source',
+    'Interviewer: What helped?\r\nParticipant: A green 🌱 sign helped.\r\nIt pointed toward the library.',
+  );
   source.turns[0].role = 'interviewer';
   source.turns[1].role = 'participant';
   project.transcripts.push(source);
@@ -98,16 +101,23 @@ it('commits concurrent disjoint notes exactly once without losing either note', 
 
 it('returns the winning head to a same-note race loser and never partially commits its other records', async () => {
   const room = await create(fixture(true));
-  const ops = ['First competing edit.', 'Second competing edit.'].map((body, index) => operation(room.project, p => {
-    p.comments[0].body = body;
-    p.name = `Synthetic name from writer ${index}`;
-  }));
+  const ops = ['First competing edit.', 'Second competing edit.'].map((body, index) =>
+    operation(room.project, p => {
+      p.comments[0].body = body;
+      p.name = `Synthetic name from writer ${index}`;
+    }),
+  );
   const results = await Promise.all(ops.map(op => post(room, op)));
   expect(results.map(r => r.status).sort()).toEqual([200, 409]);
   const winner = results.findIndex(r => r.status === 200);
   const loser = results[1 - winner];
   const current = await head(room);
-  expect(loser.body).toMatchObject({ error: 'operation_conflict', reason: 'records_changed', operationId: ops[1 - winner].id, room: current });
+  expect(loser.body).toMatchObject({
+    error: 'operation_conflict',
+    reason: 'records_changed',
+    operationId: ops[1 - winner].id,
+    room: current,
+  });
   expect(current.project.name).toBe(`Synthetic name from writer ${winner}`);
   expect(current.project.comments[0].body).toBe(ops[winner].changes.find(c => c.collection === 'comments')!.after.body);
   const stored = JSON.parse(await disk(room));
@@ -117,8 +127,12 @@ it('returns the winning head to a same-note race loser and never partially commi
 
 it.each(['delete-first', 'edit-first'] as const)('preserves the winner of note deletion versus edit: %s', async order => {
   const room = await create(fixture(true));
-  const deletion = operation(room.project, p => { p.comments = []; });
-  const edit = operation(room.project, p => { p.comments[0].body = 'A later human-authored edit.'; });
+  const deletion = operation(room.project, p => {
+    p.comments = [];
+  });
+  const edit = operation(room.project, p => {
+    p.comments[0].body = 'A later human-authored edit.';
+  });
   const [first, second] = order === 'delete-first' ? [deletion, edit] : [edit, deletion];
   expect((await post(room, first)).status).toBe(200);
   const before = await disk(room);
@@ -132,23 +146,26 @@ it.each(['delete-first', 'edit-first'] as const)('preserves the winner of note d
   if (order === 'edit-first') expect(current.project.comments[0].body).toBe('A later human-authored edit.');
 });
 
-it.each(['delete-first', 'note-first'] as const)('atomically rejects a dangling graph in quote deletion versus new note: %s', async order => {
-  const room = await create();
-  const deletion = operation(room.project, p => removeQuote(p, p.quotes[0].id));
-  const add = operation(room.project, p => p.comments.push(note(p, 'new-note', 'A manually added note.')));
-  const [first, second] = order === 'delete-first' ? [deletion, add] : [add, deletion];
-  expect((await post(room, first)).status).toBe(200);
-  const before = await disk(room);
-  const rejected = await post(room, second);
-  expect(rejected.status).toBe(409);
-  expect(rejected.body).toMatchObject({ error: 'operation_conflict', reason: 'references_changed' });
-  expect(await disk(room)).toBe(before);
-  const current = await head(room);
-  expect(rejected.body.room).toEqual(current);
-  expect(() => validateProject(current.project)).not.toThrow();
-  expect(current.project.quotes).toHaveLength(order === 'delete-first' ? 0 : 1);
-  expect(current.project.comments).toHaveLength(order === 'delete-first' ? 0 : 1);
-});
+it.each(['delete-first', 'note-first'] as const)(
+  'atomically rejects a dangling graph in quote deletion versus new note: %s',
+  async order => {
+    const room = await create();
+    const deletion = operation(room.project, p => removeQuote(p, p.quotes[0].id));
+    const add = operation(room.project, p => p.comments.push(note(p, 'new-note', 'A manually added note.')));
+    const [first, second] = order === 'delete-first' ? [deletion, add] : [add, deletion];
+    expect((await post(room, first)).status).toBe(200);
+    const before = await disk(room);
+    const rejected = await post(room, second);
+    expect(rejected.status).toBe(409);
+    expect(rejected.body).toMatchObject({ error: 'operation_conflict', reason: 'references_changed' });
+    expect(await disk(room)).toBe(before);
+    const current = await head(room);
+    expect(rejected.body.room).toEqual(current);
+    expect(() => validateProject(current.project)).not.toThrow();
+    expect(current.project.quotes).toHaveLength(order === 'delete-first' ? 0 : 1);
+    expect(current.project.comments).toHaveLength(order === 'delete-first' ? 0 : 1);
+  },
+);
 
 it('returns the current head for a lost-response retry after later work and server restart', async () => {
   const room = await create();
@@ -220,10 +237,30 @@ it('leaves both receipt and state unchanged on rename failure, then accepts the 
 });
 
 const malformed: [string, (op: Operation) => void][] = [
-  ['non-UUID operation ID', op => { op.id = '-'.repeat(36); }],
-  ['duplicate changes', op => { op.changes.push(structuredClone(op.changes[0])); }],
-  ['mismatched record ID', op => { op.changes[0].after.id = 'different-note'; }],
-  ['unknown collection', op => { (op.changes[0] as { collection: string }).collection = 'unknown'; }],
+  [
+    'non-UUID operation ID',
+    op => {
+      op.id = '-'.repeat(36);
+    },
+  ],
+  [
+    'duplicate changes',
+    op => {
+      op.changes.push(structuredClone(op.changes[0]));
+    },
+  ],
+  [
+    'mismatched record ID',
+    op => {
+      op.changes[0].after.id = 'different-note';
+    },
+  ],
+  [
+    'unknown collection',
+    op => {
+      (op.changes[0] as { collection: string }).collection = 'unknown';
+    },
+  ],
 ];
 it.each(malformed)('rejects %s before touching persisted state', async (_name, corrupt) => {
   const room = await create();
@@ -253,8 +290,18 @@ it('rejects changing source text even when the replacement quote and offsets for
 it('rejects turning interviewer context into participant evidence', async () => {
   const room = await create();
   const op = operation(room.project, p => {
-    const transcript = p.transcripts[0], turn = transcript.turns[0];
-    p.quotes.push({ id: 'interviewer-quote', transcriptId: transcript.id, turnId: turn.id, start: turn.start, end: turn.end, text: transcript.text.slice(turn.start, turn.end), codeIds: [], createdAt: AT });
+    const transcript = p.transcripts[0],
+      turn = transcript.turns[0];
+    p.quotes.push({
+      id: 'interviewer-quote',
+      transcriptId: transcript.id,
+      turnId: turn.id,
+      start: turn.start,
+      end: turn.end,
+      text: transcript.text.slice(turn.start, turn.end),
+      codeIds: [],
+      createdAt: AT,
+    });
   });
   const before = await disk(room);
   const result = await post(room, op);
@@ -276,32 +323,38 @@ it('rejects a non-user-authored note at the graph-validation boundary', async ()
 
 it('scoped inverse undo preserves a later independent note', async () => {
   const room = await create(fixture(true));
-  const local = operation(room.project, p => { p.comments[0].body = 'My local edit.'; });
-  const remote = operation(room.project, p => p.comments.push(note(p, 'remote-note', 'Another person\'s later note.')));
+  const local = operation(room.project, p => {
+    p.comments[0].body = 'My local edit.';
+  });
+  const remote = operation(room.project, p => p.comments.push(note(p, 'remote-note', "Another person's later note.")));
   expect((await post(room, local)).status).toBe(200);
   expect((await post(room, remote)).status).toBe(200);
   const undo = inverseOperation(local, crypto.randomUUID(), '2026-10-04T12:02:00.000Z');
   expect((await post(room, undo)).status).toBe(200);
   const current = await head(room);
   expect(current.project.comments.find(c => c.id === 'existing-note')).toEqual(room.project.comments[0]);
-  expect(current.project.comments.find(c => c.id === 'remote-note')?.body).toBe('Another person\'s later note.');
+  expect(current.project.comments.find(c => c.id === 'remote-note')?.body).toBe("Another person's later note.");
   expect(current.project.quotes).toEqual(room.project.quotes);
   expect(JSON.parse(await disk(room)).receipts).toHaveLength(3);
 });
 
 it('scoped inverse undo conflicts with a later edit of the same note', async () => {
   const room = await create(fixture(true));
-  const local = operation(room.project, p => { p.comments[0].body = 'My local edit.'; });
+  const local = operation(room.project, p => {
+    p.comments[0].body = 'My local edit.';
+  });
   const first = await post(room, local);
   expect(first.status).toBe(200);
-  const remote = operation(first.body.project, p => { p.comments[0].body = 'Another person\'s later edit.'; });
+  const remote = operation(first.body.project, p => {
+    p.comments[0].body = "Another person's later edit.";
+  });
   expect((await post(room, remote)).status).toBe(200);
   const before = await disk(room);
   const undo = inverseOperation(local, crypto.randomUUID(), '2026-10-04T12:02:00.000Z');
   const rejected = await post(room, undo);
   expect(rejected.status).toBe(409);
   expect(rejected.body.reason).toBe('records_changed');
-  expect(rejected.body.room.project.comments[0].body).toBe('Another person\'s later edit.');
+  expect(rejected.body.room.project.comments[0].body).toBe("Another person's later edit.");
   expect(await disk(room)).toBe(before);
 });
 
@@ -337,14 +390,18 @@ it('never evicts old receipts at the ledger cap and still answers retries after 
     stored.receipts.push({ id: crypto.randomUUID(), hash: 'a'.repeat(64), revision: crypto.randomUUID() });
   }
   await fs.writeFile(path.join(dir, `${room.id}.json`), JSON.stringify(stored));
-  const finalAllowed = operation(first.body.project, p => { p.name = 'Synthetic final allowed operation'; });
+  const finalAllowed = operation(first.body.project, p => {
+    p.name = 'Synthetic final allowed operation';
+  });
   expect((await post(room, finalAllowed)).status).toBe(200);
   const current = await head(room);
   const bytesAtCap = await disk(room);
   const full = JSON.parse(bytesAtCap);
   expect(full.receipts).toHaveLength(50_000);
   expect(full.receipts[0]).toEqual(first.body.receipt);
-  const overCap = operation(current.project, p => { p.name = 'Must not evict a receipt'; });
+  const overCap = operation(current.project, p => {
+    p.name = 'Must not evict a receipt';
+  });
   const rejected = await post(room, overCap);
   expect(rejected.status).toBe(507);
   expect(rejected.body.error).toBe('operation_ledger_full');

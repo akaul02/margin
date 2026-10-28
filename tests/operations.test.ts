@@ -8,7 +8,10 @@ const AT = '2026-10-04T12:00:00.000Z';
 
 function fixture(withNote = false): Project {
   const project = newProject('Synthetic conditional-operation practice', true);
-  const transcript = makeTranscript('Synthetic source', 'Interviewer: What helped?\r\nParticipant: A green 🌱 sign helped.\r\nThe words stayed with me.');
+  const transcript = makeTranscript(
+    'Synthetic source',
+    'Interviewer: What helped?\r\nParticipant: A green 🌱 sign helped.\r\nThe words stayed with me.',
+  );
   transcript.turns[0].role = 'interviewer';
   transcript.turns[1].role = 'participant';
   project.transcripts.push(transcript);
@@ -53,7 +56,9 @@ describe('conditional record operations', () => {
 
   it('detects competing edits to an existing note without applying any part of the loser', () => {
     const base = fixture(true);
-    const first = operation(base, p => { p.comments[0].body = 'First reviewer edit.'; });
+    const first = operation(base, p => {
+      p.comments[0].body = 'First reviewer edit.';
+    });
     const second = operation(base, p => {
       p.comments[0].body = 'Second reviewer edit.';
       p.name = 'This name must not partially apply';
@@ -69,8 +74,12 @@ describe('conditional record operations', () => {
 
   it.each(['delete-first', 'edit-first'] as const)('rejects note deletion versus edit races: %s', order => {
     const base = fixture(true);
-    const deletion = operation(base, p => { p.comments = []; });
-    const edit = operation(base, p => { p.comments[0].body = 'A newer user-authored note.'; });
+    const deletion = operation(base, p => {
+      p.comments = [];
+    });
+    const edit = operation(base, p => {
+      p.comments[0].body = 'A newer user-authored note.';
+    });
     const [first, second] = order === 'delete-first' ? [deletion, edit] : [edit, deletion];
     const current = applied(base, first);
     expect(applyOperation(current, second)).toMatchObject({ project: null, conflicts: [{ id: 'existing-note' }] });
@@ -107,7 +116,9 @@ describe('conditional record operations', () => {
 
   it('rejects applying a valid operation to another project', () => {
     const base = fixture(true);
-    const op = operation(base, p => { p.comments[0].body = 'Changed.'; });
+    const op = operation(base, p => {
+      p.comments[0].body = 'Changed.';
+    });
     const other = fixture(true);
     expect(() => applyOperation(other, op)).toThrow(/different project/i);
     expect(() => diffProject(base, other)).toThrow(/identity/i);
@@ -117,14 +128,16 @@ describe('conditional record operations', () => {
 describe('scoped inverse undo', () => {
   it('undoes only the local note while retaining an unrelated later remote note', () => {
     const base = fixture(true);
-    const local = operation(base, p => { p.comments[0].body = 'My edit.'; });
-    const remote = operation(base, p => p.comments.push(note(p, 'remote-note', 'Another reviewer\'s note.')));
+    const local = operation(base, p => {
+      p.comments[0].body = 'My edit.';
+    });
+    const remote = operation(base, p => p.comments.push(note(p, 'remote-note', "Another reviewer's note.")));
     const current = applied(applied(base, local), remote);
     const undo = inverseOperation(local, crypto.randomUUID(), '2026-10-04T12:02:00.000Z');
     expect(undo.id).not.toBe(local.id);
     const restored = applied(current, undo);
     expect(restored.comments.find(c => c.id === 'existing-note')).toEqual(base.comments[0]);
-    expect(restored.comments.find(c => c.id === 'remote-note')?.body).toBe('Another reviewer\'s note.');
+    expect(restored.comments.find(c => c.id === 'remote-note')?.body).toBe("Another reviewer's note.");
     expect(restored.quotes).toEqual(base.quotes);
     expect(restored.transcripts).toEqual(base.transcripts);
     expect(validateProject(restored)).toEqual(restored);
@@ -132,9 +145,13 @@ describe('scoped inverse undo', () => {
 
   it('refuses inverse undo when a later remote edit changed the same note', () => {
     const base = fixture(true);
-    const local = operation(base, p => { p.comments[0].body = 'My edit.'; });
+    const local = operation(base, p => {
+      p.comments[0].body = 'My edit.';
+    });
     const afterLocal = applied(base, local);
-    const remote = operation(afterLocal, p => { p.comments[0].body = 'Their later edit.'; });
+    const remote = operation(afterLocal, p => {
+      p.comments[0].body = 'Their later edit.';
+    });
     const current = applied(afterLocal, remote);
     const undo = inverseOperation(local, crypto.randomUUID(), AT);
     expect(applyOperation(current, undo)).toMatchObject({ project: null, conflicts: [{ id: 'existing-note' }] });
@@ -144,18 +161,55 @@ describe('scoped inverse undo', () => {
 
 describe('operation and provenance boundaries', () => {
   const malformed: [string, (op: Operation) => void][] = [
-    ['non-UUID operation ID', op => { op.id = '-'.repeat(36); }],
-    ['duplicate record changes', op => { op.changes.push(structuredClone(op.changes[0])); }],
-    ['mismatched record ID', op => { op.changes[0].after.id = 'different-record'; }],
-    ['unknown collection', op => { (op.changes[0] as { collection: string }).collection = 'unknown'; }],
-    ['missing before value', op => { delete (op.changes[0] as Partial<typeof op.changes[0]>).before; }],
-    ['invalid operation date', op => { op.at = 'yesterday'; }],
-    ['empty delta', op => { op.changes = []; }],
+    [
+      'non-UUID operation ID',
+      op => {
+        op.id = '-'.repeat(36);
+      },
+    ],
+    [
+      'duplicate record changes',
+      op => {
+        op.changes.push(structuredClone(op.changes[0]));
+      },
+    ],
+    [
+      'mismatched record ID',
+      op => {
+        op.changes[0].after.id = 'different-record';
+      },
+    ],
+    [
+      'unknown collection',
+      op => {
+        (op.changes[0] as { collection: string }).collection = 'unknown';
+      },
+    ],
+    [
+      'missing before value',
+      op => {
+        delete (op.changes[0] as Partial<(typeof op.changes)[0]>).before;
+      },
+    ],
+    [
+      'invalid operation date',
+      op => {
+        op.at = 'yesterday';
+      },
+    ],
+    [
+      'empty delta',
+      op => {
+        op.changes = [];
+      },
+    ],
   ];
   it.each(malformed)('rejects %s without modifying the input project', (_name, corrupt) => {
     const base = fixture(true);
     const original = structuredClone(base);
-    const op = operation(base, p => { p.comments[0].body = 'Changed.'; });
+    const op = operation(base, p => {
+      p.comments[0].body = 'Changed.';
+    });
     corrupt(op);
     expect(() => validateOperation(op)).toThrow();
     expect(() => applyOperation(base, op)).toThrow();
@@ -163,16 +217,66 @@ describe('operation and provenance boundaries', () => {
   });
 
   const changesToEvidence: [string, (p: Project) => void][] = [
-    ['original source text', p => { p.transcripts[0].text = p.transcripts[0].text.replace('green', 'amber'); }],
-    ['turn identity', p => { p.transcripts[0].turns[1].id = 'replacement-turn'; }],
-    ['turn UTF-16 start', p => { p.transcripts[0].turns[1].start += 1; }],
-    ['turn UTF-16 end', p => { p.transcripts[0].turns[1].end -= 1; }],
-    ['quote source identity', p => { p.quotes[0].transcriptId = 'replacement-source'; }],
-    ['quote turn identity', p => { p.quotes[0].turnId = 'replacement-turn'; }],
-    ['quote UTF-16 start', p => { p.quotes[0].start += 1; }],
-    ['quote UTF-16 end', p => { p.quotes[0].end -= 1; }],
-    ['quote text', p => { p.quotes[0].text = 'A paraphrase is not a quote.'; }],
-    ['quote creation date', p => { p.quotes[0].createdAt = AT; }],
+    [
+      'original source text',
+      p => {
+        p.transcripts[0].text = p.transcripts[0].text.replace('green', 'amber');
+      },
+    ],
+    [
+      'turn identity',
+      p => {
+        p.transcripts[0].turns[1].id = 'replacement-turn';
+      },
+    ],
+    [
+      'turn UTF-16 start',
+      p => {
+        p.transcripts[0].turns[1].start += 1;
+      },
+    ],
+    [
+      'turn UTF-16 end',
+      p => {
+        p.transcripts[0].turns[1].end -= 1;
+      },
+    ],
+    [
+      'quote source identity',
+      p => {
+        p.quotes[0].transcriptId = 'replacement-source';
+      },
+    ],
+    [
+      'quote turn identity',
+      p => {
+        p.quotes[0].turnId = 'replacement-turn';
+      },
+    ],
+    [
+      'quote UTF-16 start',
+      p => {
+        p.quotes[0].start += 1;
+      },
+    ],
+    [
+      'quote UTF-16 end',
+      p => {
+        p.quotes[0].end -= 1;
+      },
+    ],
+    [
+      'quote text',
+      p => {
+        p.quotes[0].text = 'A paraphrase is not a quote.';
+      },
+    ],
+    [
+      'quote creation date',
+      p => {
+        p.quotes[0].createdAt = AT;
+      },
+    ],
   ];
   it.each(changesToEvidence)('rejects mutation of %s on a surviving record', (_name, edit) => {
     const before = fixture();
@@ -200,7 +304,13 @@ describe('board notes', () => {
     const before = fixture();
     const after = structuredClone(before);
     addBoardNote(after, null, 'A synthetic thought.');
-    const op: Operation = { id: crypto.randomUUID(), projectId: before.id, at: AT, label: 'Note added.', changes: diffProject(before, after) };
+    const op: Operation = {
+      id: crypto.randomUUID(),
+      projectId: before.id,
+      at: AT,
+      label: 'Note added.',
+      changes: diffProject(before, after),
+    };
     expect(op.changes.map(c => c.collection)).toEqual(['boardNotes']);
     const stored = structuredClone(before) as Partial<Project>;
     delete stored.boardNotes;

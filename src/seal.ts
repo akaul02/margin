@@ -57,7 +57,11 @@ const PAPERS = ['#fff2a6', '#ffd3df', '#cde7ff', '#d4f1c5', '#ffd9b3', '#e4daff'
 export type Mood = 'idle' | 'talk' | 'point' | 'cheer' | 'wave';
 export const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-const done = (a: Animation) => a.finished.then(() => undefined, () => undefined);
+const done = (a: Animation) =>
+  a.finished.then(
+    () => undefined,
+    () => undefined,
+  );
 const frame = () => new Promise(r => requestAnimationFrame(() => r(undefined)));
 
 /** Ceal's eyes follow the pointer (mirrored when Ceal faces right). */
@@ -248,11 +252,7 @@ export class SealGuide {
   private async arrive(now: DOMRect) {
     const dx = innerWidth + 40 - now.left;
     const slide = this.el.animate(
-      [
-        { transform: `translate(${dx}px, 8px)` },
-        { transform: 'translate(-10px, 8px)', offset: 0.72 },
-        { transform: 'translate(0, 0)' },
-      ],
+      [{ transform: `translate(${dx}px, 8px)` }, { transform: 'translate(-10px, 8px)', offset: 0.72 }, { transform: 'translate(0, 0)' }],
       { duration: 1000, easing: 'cubic-bezier(.15,.75,.3,1)' },
     );
     this.squash.animate(
@@ -355,7 +355,10 @@ export class SealGuide {
     if (finished) {
       this.mood('cheer');
       const fall = innerHeight - r.top + 40;
-      this.squash.animate([{ transform: 'scale(1.2, 0.8)' }, { transform: 'scale(0.85, 1.2)', offset: 0.25 }, { transform: 'scale(1, 1)' }], { duration: 900 });
+      this.squash.animate(
+        [{ transform: 'scale(1.2, 0.8)' }, { transform: 'scale(0.85, 1.2)', offset: 0.25 }, { transform: 'scale(1, 1)' }],
+        { duration: 900 },
+      );
       await done(
         this.el.animate(
           [
@@ -371,11 +374,17 @@ export class SealGuide {
       this.mood('wave');
       await sleep(650);
       await done(
-        this.el.animate([{ transform: 'translate(0, 0)', opacity: 1 }, { transform: `translate(0, ${innerHeight - r.top + 40}px)`, opacity: 1 }], {
-          duration: 650,
-          easing: 'cubic-bezier(.5,0,.9,.5)',
-          fill: 'forwards',
-        }),
+        this.el.animate(
+          [
+            { transform: 'translate(0, 0)', opacity: 1 },
+            { transform: `translate(0, ${innerHeight - r.top + 40}px)`, opacity: 1 },
+          ],
+          {
+            duration: 650,
+            easing: 'cubic-bezier(.5,0,.9,.5)',
+            fill: 'forwards',
+          },
+        ),
       );
     }
     this.el.remove();

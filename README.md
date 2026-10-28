@@ -64,6 +64,7 @@ Projects stay in the browser (IndexedDB) until you share them. Margin has no ana
 
 ```sh
 npm run typecheck
+npm run format                                          # Prettier
 npm test                                                # unit tests (Vitest)
 npm run build && MARGIN_TEST_PRODUCTION=1 npm run test:browser   # browser tests (Playwright, with axe checks)
 npm run test:hosted:browser                             # hosted mode against a local fixture

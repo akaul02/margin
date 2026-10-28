@@ -11,13 +11,42 @@ type Step = { element: string | (() => Element); title: string; text: string; do
 
 export const tutorialSteps: Step[] = [
   // The core loop, hands-on: each step moves on by itself once it is done.
-  { element: '[data-nav="read"]', title: 'Hi, I’m Ceal!', text: 'Let’s sort a practice interview together. Click Transcripts.', done: s => s.view === 'read' },
-  { element: '.turn.participant', title: 'Find a good quote', text: 'Drag across something the participant said.', done: s => s.selection || s.quotes > 0 },
-  { element: '.file-list', title: 'Put it on the board', text: 'Press 0, or click Ungrouped. The words become a sticky.', done: s => s.quotes > 0 },
-  { element: '.selection-placeholder .file-actions button', title: 'Make a group', text: 'Click New group and name what the quote is about.', done: s => s.groups > 0 },
-  { element: '.turn-list', title: 'Now the fast way', text: 'Highlight another sentence and press 1. It goes straight into your group.', done: s => s.grouped > 0 },
+  {
+    element: '[data-nav="read"]',
+    title: 'Hi, I’m Ceal!',
+    text: 'Let’s sort a practice interview together. Click Transcripts.',
+    done: s => s.view === 'read',
+  },
+  {
+    element: '.turn.participant',
+    title: 'Find a good quote',
+    text: 'Drag across something the participant said.',
+    done: s => s.selection || s.quotes > 0,
+  },
+  {
+    element: '.file-list',
+    title: 'Put it on the board',
+    text: 'Press 0, or click Ungrouped. The words become a sticky.',
+    done: s => s.quotes > 0,
+  },
+  {
+    element: '.selection-placeholder .file-actions button',
+    title: 'Make a group',
+    text: 'Click New group and name what the quote is about.',
+    done: s => s.groups > 0,
+  },
+  {
+    element: '.turn-list',
+    title: 'Now the fast way',
+    text: 'Highlight another sentence and press 1. It goes straight into your group.',
+    done: s => s.grouped > 0,
+  },
   { element: '[data-nav="board"]', title: 'Let’s see the wall', text: 'Click Board.', done: s => s.view === 'board' },
-  { element: '.board-wall', title: 'This is your wall', text: 'Each group is a column of stickies in its own color. Drag a sticky to another group to move it. Big boards get a map on top.' },
+  {
+    element: '.board-wall',
+    title: 'This is your wall',
+    text: 'Each group is a column of stickies in its own color. Drag a sticky to another group to move it. Big boards get a map on top.',
+  },
   {
     // The whole column, so the note being written stays clickable under the spotlight.
     element: () => document.querySelector('.add-note')?.closest('.board-group') ?? document.body,
@@ -26,13 +55,33 @@ export const tutorialSteps: Step[] = [
     done: s => s.notes > 0,
   },
   // A quick look at everything else.
-  { element: '.board-wall .board-group:not(.ungrouped) .board-column-head', title: 'Group labels', text: 'Edit renames a group or adds a description. Read more opens it.' },
-  { element: '.board-actions', title: 'Find and share', text: 'All quotes lists every quote. Work together shares the board with co-authors.' },
-  { element: '[data-nav="memos"]', title: 'Memos', text: 'Write what your groups add up to. Memos stay separate from participants’ words.' },
-  { element: '[data-nav="workbench"]', title: 'Codes', text: 'Optional: a codebook, themes and a coding map when you want more structure.' },
+  {
+    element: '.board-wall .board-group:not(.ungrouped) .board-column-head',
+    title: 'Group labels',
+    text: 'Edit renames a group or adds a description. Read more opens it.',
+  },
+  {
+    element: '.board-actions',
+    title: 'Find and share',
+    text: 'All quotes lists every quote. Work together shares the board with co-authors.',
+  },
+  {
+    element: '[data-nav="memos"]',
+    title: 'Memos',
+    text: 'Write what your groups add up to. Memos stay separate from participants’ words.',
+  },
+  {
+    element: '[data-nav="workbench"]',
+    title: 'Codes',
+    text: 'Optional: a codebook, themes and a coding map when you want more structure.',
+  },
   { element: '.top-actions', title: 'Safe to experiment', text: 'Undo takes back your last change. History keeps restore points.' },
   { element: '.export-button', title: 'Keep a copy', text: 'Export downloads a backup or spreadsheets of your board.' },
-  { element: '.board-wall', title: 'That’s everything!', text: 'Now try it with your own interviews. Replay me anytime from the ? button.' },
+  {
+    element: '.board-wall',
+    title: 'That’s everything!',
+    text: 'Now try it with your own interviews. Replay me anytime from the ? button.',
+  },
 ];
 
 export function useTutorial(active: boolean, state: TutorialState, end: () => void) {
@@ -63,7 +112,7 @@ export function useTutorial(active: boolean, state: TutorialState, end: () => vo
       popoverClass: 'margin-coach',
       doneBtnText: 'Finish',
       nextBtnText: 'Next',
-      steps: tutorialSteps.map((s, i) => ({
+      steps: tutorialSteps.map(s => ({
         element: s.element,
         // Hands-on steps wait for the reader; overview steps have a Next button.
         popover: { title: s.title, description: s.text, showButtons: s.done ? ['close'] : ['next', 'close'] },
@@ -75,10 +124,11 @@ export function useTutorial(active: boolean, state: TutorialState, end: () => vo
         stopTyping = typeOut(popover.description, guide);
         const last = d.isLastStep();
         // Wait for driver.js to place the bubble, then Ceal hops over to it; the last step gets a finale.
-        requestAnimationFrame(() =>
-          void guide.join(popover.wrapper, d.getActiveElement()).then(() => {
-            if (last) void guide.cheer(true);
-          }),
+        requestAnimationFrame(
+          () =>
+            void guide.join(popover.wrapper, d.getActiveElement()).then(() => {
+              if (last) void guide.cheer(true);
+            }),
         );
       },
       onDeselected: () => guide.hold(),

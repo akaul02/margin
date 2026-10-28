@@ -26,8 +26,7 @@ const HEARTBEAT_MS = 15000;
 const MAX_RECEIPTS = 50_000;
 const MAX_RECEIPT_BYTES = 12_000_000;
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '::1']);
 
@@ -39,12 +38,11 @@ class HttpError extends Error {
   }
 }
 
-const isPlainObject = (v) =>
-  typeof v === 'object' && v !== null && !Array.isArray(v);
+const isPlainObject = v => typeof v === 'object' && v !== null && !Array.isArray(v);
 
-const isUuid = (v) => typeof v === 'string' && UUID_RE.test(v);
+const isUuid = v => typeof v === 'string' && UUID_RE.test(v);
 
-const isNonEmptyString = (v) => typeof v === 'string' && v.length > 0;
+const isNonEmptyString = v => typeof v === 'string' && v.length > 0;
 
 /** Strip the port (and IPv6 brackets) from a Host header value. */
 function hostnameOf(hostHeader) {
@@ -100,7 +98,7 @@ function sendError(res, status, code) {
  * so no caller can hang waiting for a body that will never arrive.
  */
 function readBody(req, limit) {
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     let total = 0;
     const chunks = [];
     let settled = false;
@@ -112,13 +110,13 @@ function readBody(req, limit) {
       req.off('aborted', onAborted);
       req.off('close', onClose);
     };
-    const finish = (result) => {
+    const finish = result => {
       if (settled) return;
       settled = true;
       cleanup();
       resolve(result);
     };
-    const onData = (chunk) => {
+    const onData = chunk => {
       total += chunk.length;
       if (total > limit) {
         finish({ ok: false, code: 'payload_too_large', status: 413 });
@@ -144,27 +142,13 @@ function readBody(req, limit) {
   });
 }
 
-export async function startRoomServer({
-  port = 0,
-  dataDir,
-  allowedOrigins,
-  validateProject,
-  exportProject,
-} = {}) {
+export async function startRoomServer({ port = 0, dataDir, allowedOrigins, validateProject, exportProject } = {}) {
   if (!isNonEmptyString(dataDir)) throw new TypeError('dataDir is required');
-  if (typeof validateProject !== 'function')
-    throw new TypeError('validateProject is required');
-  if (typeof exportProject !== 'function')
-    throw new TypeError('exportProject is required');
+  if (typeof validateProject !== 'function') throw new TypeError('validateProject is required');
+  if (typeof exportProject !== 'function') throw new TypeError('exportProject is required');
 
   // Explicit allow-list only; no wildcards are honoured.
-  const origins = new Set(
-    allowedOrigins instanceof Set
-      ? [...allowedOrigins]
-      : Array.isArray(allowedOrigins)
-        ? allowedOrigins
-        : [],
-  );
+  const origins = new Set(allowedOrigins instanceof Set ? [...allowedOrigins] : Array.isArray(allowedOrigins) ? allowedOrigins : []);
   for (const o of origins) {
     if (typeof o !== 'string' || o === '*') {
       throw new TypeError('allowedOrigins must be explicit origin strings');
@@ -251,8 +235,7 @@ export async function startRoomServer({
     if (!isUuid(raw.revision)) throw bad();
     if (!isNonEmptyString(raw.updatedAt)) throw bad();
     if (!Array.isArray(raw.history)) throw bad();
-    if (raw.history.length === 0 || raw.history.length > MAX_HISTORY_POINTS)
-      throw bad();
+    if (raw.history.length === 0 || raw.history.length > MAX_HISTORY_POINTS) throw bad();
 
     let project;
     try {
@@ -264,8 +247,7 @@ export async function startRoomServer({
     const history = [];
     for (const point of raw.history) {
       if (!isPlainObject(point)) throw bad();
-      if (!isUuid(point.revision) || !isNonEmptyString(point.updatedAt))
-        throw bad();
+      if (!isUuid(point.revision) || !isNonEmptyString(point.updatedAt)) throw bad();
       let p;
       try {
         p = await acceptProject(point.project, 503);
@@ -281,7 +263,13 @@ export async function startRoomServer({
       throw bad();
 
     const receipts = raw.receipts ?? [];
-    if (!Array.isArray(receipts) || receipts.length > MAX_RECEIPTS || new Set(receipts.map(r=>r?.id)).size !== receipts.length || receipts.some(r=>!r || !isUuid(r.id) || !isUuid(r.revision) || !/^[a-f0-9]{64}$/.test(r.hash))) throw bad();
+    if (
+      !Array.isArray(receipts) ||
+      receipts.length > MAX_RECEIPTS ||
+      new Set(receipts.map(r => r?.id)).size !== receipts.length ||
+      receipts.some(r => !r || !isUuid(r.id) || !isUuid(r.revision) || !/^[a-f0-9]{64}$/.test(r.hash))
+    )
+      throw bad();
     if (raw.creationHash !== undefined && !/^[a-f0-9]{64}$/.test(raw.creationHash)) throw bad();
 
     return {
@@ -370,7 +358,7 @@ export async function startRoomServer({
     return n;
   }
 
-  const publicShape = (doc) => ({
+  const publicShape = doc => ({
     id: doc.id,
     revision: doc.revision,
     project: doc.project,
@@ -448,48 +436,52 @@ export async function startRoomServer({
     if (body.id !== undefined && !isUuid(body.id)) throw new HttpError(400, 'invalid_body');
     const creationHash = crypto.createHash('sha256').update(canonical(project)).digest('hex');
 
-    const doc = await (createQueue = createQueue.then(
-      async () => {
-        if (body.id) {
-          try {
-            const existing = await readDoc(body.id);
-            if (existing.creationHash !== creationHash) throw new HttpError(409, 'creation_id_reused');
-            return existing;
-          } catch (err) { if (!(err instanceof HttpError) || err.status !== 404) throw err; }
-        }
-        if ((await countRooms()) >= MAX_ROOMS) {
-          throw new HttpError(429, 'room_limit_reached');
-        }
-        const now = new Date().toISOString();
-        for (let attempt = 0; attempt < 5; attempt += 1) {
-          const id = body.id ?? crypto.randomUUID();
-          if (rooms.has(id)) continue;
-          const revision = crypto.randomUUID();
-          const next = {
-            id,
-            revision,
-            project,
-            updatedAt: now,
-            history: [{ revision, project, updatedAt: now }],
-            receipts: [],
-            creationHash,
-          };
-          try {
-            await writeDocAtomic(id, next, { create: true });
-          } catch (err) {
-            if (err instanceof HttpError && err.code === 'conflict') continue;
-            throw err;
+    const doc = await (createQueue = createQueue
+      .then(
+        async () => {
+          if (body.id) {
+            try {
+              const existing = await readDoc(body.id);
+              if (existing.creationHash !== creationHash) throw new HttpError(409, 'creation_id_reused');
+              return existing;
+            } catch (err) {
+              if (!(err instanceof HttpError) || err.status !== 404) throw err;
+            }
           }
-          entryFor(id).revision = revision;
-          return next;
-        }
-        throw new HttpError(503, 'write_failed');
-      },
-      // keep the chain alive after a rejection
-    ).catch((err) => {
-      createQueue = Promise.resolve();
-      throw err;
-    }));
+          if ((await countRooms()) >= MAX_ROOMS) {
+            throw new HttpError(429, 'room_limit_reached');
+          }
+          const now = new Date().toISOString();
+          for (let attempt = 0; attempt < 5; attempt += 1) {
+            const id = body.id ?? crypto.randomUUID();
+            if (rooms.has(id)) continue;
+            const revision = crypto.randomUUID();
+            const next = {
+              id,
+              revision,
+              project,
+              updatedAt: now,
+              history: [{ revision, project, updatedAt: now }],
+              receipts: [],
+              creationHash,
+            };
+            try {
+              await writeDocAtomic(id, next, { create: true });
+            } catch (err) {
+              if (err instanceof HttpError && err.code === 'conflict') continue;
+              throw err;
+            }
+            entryFor(id).revision = revision;
+            return next;
+          }
+          throw new HttpError(503, 'write_failed');
+        },
+        // keep the chain alive after a rejection
+      )
+      .catch(err => {
+        createQueue = Promise.resolve();
+        throw err;
+      }));
 
     sendJson(res, 201, publicShape(doc));
   }
@@ -503,7 +495,7 @@ export async function startRoomServer({
   async function handleHistory(res, id) {
     const doc = await readDoc(id);
     sendJson(res, 200, {
-      points: doc.history.map((p) => ({
+      points: doc.history.map(p => ({
         revision: p.revision,
         project: p.project,
         updatedAt: p.updatedAt,
@@ -528,13 +520,14 @@ export async function startRoomServer({
         throw new HttpError(409, 'project_mismatch');
       }
 
-      try { assertImmutableSources(current.project, project); } catch { throw new HttpError(400, 'source_changed'); }
+      try {
+        assertImmutableSources(current.project, project);
+      } catch {
+        throw new HttpError(400, 'source_changed');
+      }
       const revision = crypto.randomUUID();
       const updatedAt = new Date().toISOString();
-      const history = trimHistory([
-        ...current.history,
-        { revision, project, updatedAt },
-      ]);
+      const history = trimHistory([...current.history, { revision, project, updatedAt }]);
       const next = { ...current, id, revision, project, updatedAt, history };
 
       // Only after the bytes are durably in place do we advance live state.
@@ -553,12 +546,16 @@ export async function startRoomServer({
 
   async function handleOperation(res, id, body) {
     let operation;
-    try { operation = validateOperation(body); } catch { throw new HttpError(400, 'invalid_operation'); }
+    try {
+      operation = validateOperation(body);
+    } catch {
+      throw new HttpError(400, 'invalid_operation');
+    }
     const hash = crypto.createHash('sha256').update(canonical(operation)).digest('hex');
     const entry = entryFor(id);
     const result = await enqueue(entry, async () => {
       const current = await readDoc(id);
-      const previousReceipt = current.receipts.find(r=>r.id === operation.id);
+      const previousReceipt = current.receipts.find(r => r.id === operation.id);
       if (previousReceipt) {
         if (previousReceipt.hash !== hash) throw new HttpError(409, 'operation_id_reused');
         // Return today's head, never an old receipt snapshot which could undo
@@ -572,13 +569,23 @@ export async function startRoomServer({
       let project;
       try {
         assertImmutableSources(current.project, applied.project);
-      } catch { throw new HttpError(400, 'source_changed'); }
-      try { project = await acceptProject(applied.project); }
-      catch { return { conflict: true, doc: current, reason: 'references_changed' }; }
-      const revision = crypto.randomUUID(), updatedAt = new Date().toISOString();
+      } catch {
+        throw new HttpError(400, 'source_changed');
+      }
+      try {
+        project = await acceptProject(applied.project);
+      } catch {
+        return { conflict: true, doc: current, reason: 'references_changed' };
+      }
+      const revision = crypto.randomUUID(),
+        updatedAt = new Date().toISOString();
       project.updatedAt = updatedAt;
       const receipt = { id: operation.id, hash, revision };
-      const next = { ...current, revision, updatedAt, project,
+      const next = {
+        ...current,
+        revision,
+        updatedAt,
+        project,
         receipts: [...current.receipts, receipt],
         history: trimHistory([...current.history, { revision, project, updatedAt }]),
       };
@@ -587,7 +594,13 @@ export async function startRoomServer({
       notify(entry, revision);
       return { doc: next, receipt, duplicate: false };
     });
-    if (result.conflict) return sendJson(res, 409, { error: 'operation_conflict', reason: result.reason, operationId: operation.id, room: publicShape(result.doc) });
+    if (result.conflict)
+      return sendJson(res, 409, {
+        error: 'operation_conflict',
+        reason: result.reason,
+        operationId: operation.id,
+        room: publicShape(result.doc),
+      });
     sendJson(res, 200, { ...publicShape(result.doc), receipt: result.receipt, duplicate: result.duplicate });
   }
 
@@ -713,7 +726,7 @@ export async function startRoomServer({
     res.on('error', () => {});
     Promise.resolve()
       .then(() => route(req, res))
-      .catch((err) => {
+      .catch(err => {
         const status = err instanceof HttpError ? err.status : 500;
         const code = err instanceof HttpError ? err.code : 'internal_error';
         try {
@@ -735,7 +748,7 @@ export async function startRoomServer({
       /* ignore */
     }
   });
-  server.on('connection', (socket) => {
+  server.on('connection', socket => {
     sockets.add(socket);
     socket.on('error', () => {});
     socket.on('close', () => sockets.delete(socket));
@@ -745,7 +758,7 @@ export async function startRoomServer({
   });
 
   await new Promise((resolve, reject) => {
-    const onError = (err) => reject(err);
+    const onError = err => reject(err);
     server.once('error', onError);
     server.listen({ host: '127.0.0.1', port, exclusive: true }, () => {
       server.off('error', onError);
@@ -762,7 +775,7 @@ export async function startRoomServer({
       entry.clients.clear();
     }
 
-    const closed = new Promise((resolve) => server.close(() => resolve()));
+    const closed = new Promise(resolve => server.close(() => resolve()));
     if (typeof server.closeIdleConnections === 'function') {
       server.closeIdleConnections();
     }

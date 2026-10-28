@@ -1,21 +1,200 @@
 import { expect, it } from 'vitest';
 import { demoProject } from '../src/demo';
-import { addCode, assignQuote, copy, coverageRows, exportProject, importProject, mergeCodes, removeQuote, themeCSV, validateProject } from '../src/model';
+import {
+  addCode,
+  assignQuote,
+  copy,
+  coverageRows,
+  exportProject,
+  importProject,
+  mergeCodes,
+  removeQuote,
+  themeCSV,
+  validateProject,
+} from '../src/model';
 function linked() {
- const p=demoProject(true); const a=addCode(p,'Presence'),b=addCode(p,'Access');
- for(const t of p.transcripts){const turn=t.turns.find(x=>x.role==='participant')!;assignQuote(p,t.id,turn.id,turn.start,turn.end,[a.id,b.id]);}
- a.inclusion='My inclusion guide';a.exclusion='My exclusion guide';a.exampleQuoteIds=[p.quotes[0].id];b.exampleQuoteIds=[p.quotes[1].id];
- p.themes.push({id:'my-group',title:'My working connection',body:'A question, not a conclusion.',kind:'theme',author:'user',codeIds:[a.id,b.id],quoteIds:p.quotes.map(q=>q.id),createdAt:p.createdAt,updatedAt:p.updatedAt});
- p.memos.push({id:'my-comparison',title:'My comparison',body:'I notice a difference.',author:'user',quoteIds:p.quotes.map(q=>q.id),createdAt:p.createdAt,updatedAt:p.updatedAt});return {p,a,b};
+  const p = demoProject(true);
+  const a = addCode(p, 'Presence'),
+    b = addCode(p, 'Access');
+  for (const t of p.transcripts) {
+    const turn = t.turns.find(x => x.role === 'participant')!;
+    assignQuote(p, t.id, turn.id, turn.start, turn.end, [a.id, b.id]);
+  }
+  a.inclusion = 'My inclusion guide';
+  a.exclusion = 'My exclusion guide';
+  a.exampleQuoteIds = [p.quotes[0].id];
+  b.exampleQuoteIds = [p.quotes[1].id];
+  p.themes.push({
+    id: 'my-group',
+    title: 'My working connection',
+    body: 'A question, not a conclusion.',
+    kind: 'theme',
+    author: 'user',
+    codeIds: [a.id, b.id],
+    quoteIds: p.quotes.map(q => q.id),
+    createdAt: p.createdAt,
+    updatedAt: p.updatedAt,
+  });
+  p.memos.push({
+    id: 'my-comparison',
+    title: 'My comparison',
+    body: 'I notice a difference.',
+    author: 'user',
+    quoteIds: p.quotes.map(q => q.id),
+    createdAt: p.createdAt,
+    updatedAt: p.updatedAt,
+  });
+  return { p, a, b };
 }
-it('roundtrips guidance, chosen examples, manual themes, linked memos and exact sources',()=>{const {p}=linked();expect(importProject(exportProject(p))).toEqual(p);expect(themeCSV(p)).toContain('my-group');});
-it('migrates v1 without modifying input, IDs, original bytes or offsets',()=>{const {p}=linked();const legacy:any=copy(p);legacy.version=1;delete legacy.themes;for(const c of legacy.codes){delete c.inclusion;delete c.exclusion;delete c.exampleQuoteIds;}for(const m of legacy.memos)delete m.quoteIds;const before=JSON.stringify(legacy);const migrated=importProject(before);expect(JSON.stringify(legacy)).toBe(before);expect(migrated.version).toBe(3);expect(migrated.transcripts).toEqual(legacy.transcripts);expect(migrated.quotes).toEqual(legacy.quotes);expect(migrated.themes).toEqual([]);expect(migrated.memos[0].body).toBe(legacy.memos[0].body);expect(validateProject(migrated)).toEqual(migrated);});
-it('rejects invalid v1 source evidence during migration',()=>{const {p}=linked();const legacy:any=copy(p);legacy.version=1;legacy.quotes[0].text='An invented interpretation';expect(()=>importProject(JSON.stringify(legacy))).toThrow(/quote does not match/);});
-it('merging updates all links, keeps guidance/examples and counts exact quotes only once',()=>{const {p,a,b}=linked();const sources=copy(p.transcripts),quotes=copy(p.quotes);mergeCodes(p,a.id,b.id);expect(p.themes[0].codeIds).toEqual([b.id]);expect(b.exampleQuoteIds).toHaveLength(2);expect(b.inclusion).toContain('My inclusion guide');expect(b.exclusion).toContain('My exclusion guide');expect(p.quotes.map(q=>q.id)).toEqual(quotes.map(q=>q.id));expect(p.transcripts).toEqual(sources);expect(coverageRows(p).map(r=>r.counts[b.id])).toEqual([1,1]);expect(validateProject(p)).toEqual(p);});
-it('removing a quote cleans references but preserves authored prose',()=>{const {p,a}=linked();const before=copy(p);removeQuote(p,p.quotes[0].id);expect(a.exampleQuoteIds).toEqual([]);expect(p.themes[0].quoteIds).toHaveLength(1);expect(p.themes[0].body).toBe(before.themes[0].body);expect(p.memos[0].quoteIds).toHaveLength(1);expect(p.memos[0].body).toBe(before.memos[0].body);expect(validateProject(p)).toEqual(p);});
-it('keeps identical participant labels in separate source rows',()=>{const {p,a}=linked();const rows=coverageRows(p);expect(rows).toHaveLength(2);expect(rows[0].speaker).toBe(rows[1].speaker);expect(rows[0].transcriptId).not.toBe(rows[1].transcriptId);expect(rows.map(r=>r.counts[a.id])).toEqual([1,1]);});
-for(const kind of ['theme quote','theme code','example','memo','duplicate example','example without code','authorship']) it(`rejects invalid ${kind} links`,()=>{const {p,a,b}=linked();if(kind==='theme quote')p.themes[0].quoteIds=['missing'];if(kind==='theme code')p.themes[0].codeIds=['missing'];if(kind==='example')a.exampleQuoteIds=['missing'];if(kind==='memo')p.memos[0].quoteIds=['missing'];if(kind==='duplicate example')a.exampleQuoteIds=[p.quotes[0].id,p.quotes[0].id];if(kind==='example without code')p.quotes[0].codeIds=[b.id];if(kind==='authorship')(p.themes[0] as any).author='model';expect(()=>importProject(JSON.stringify(p))).toThrow(/Invalid project/);});
-it('preflights guidance overflow without partial merge changes',()=>{const {p,a,b}=linked();a.inclusion='a'.repeat(12_000);b.inclusion='b'.repeat(12_000);const before=copy(p);expect(()=>mergeCodes(p,a.id,b.id)).toThrow(/Combined guidance/);expect(p).toEqual(before);});
-it('rejects missing v2 fields rather than silently resetting links',()=>{const {p}=linked();delete (p.codes[0] as any).exampleQuoteIds;expect(()=>validateProject(p)).toThrow(/malformed code/);});
-it('migrates a valid v1 backup near the old byte ceiling and exports it as v2',()=>{const legacy:any=demoProject(true);legacy.version=1;delete legacy.themes;legacy.transcripts=[];for(let i=0;i<10;i++){const t={id:`source-${i}`,name:`Source ${i}`,text:'x'.repeat(995_000),createdAt:legacy.createdAt,turns:[{id:`turn-${i}`,label:'P',role:'unassigned',start:0,end:995_000}]};legacy.transcripts.push(t);}const initial=JSON.stringify(legacy,null,2).length;const extra=9_999_990-initial;legacy.transcripts.push({id:'last',name:'Last',text:'x',createdAt:legacy.createdAt,turns:[{id:'last-turn',label:'P',role:'unassigned',start:0,end:1}]});const delta=9_999_990-JSON.stringify(legacy,null,2).length;legacy.transcripts[10].text='x'.repeat(delta-12);legacy.transcripts[10].turns[0].end=legacy.transcripts[10].text.length;expect(extra).toBeGreaterThan(0);const raw=JSON.stringify(legacy,null,2);expect(raw.length).toBeLessThanOrEqual(10_000_000);expect(raw.length).toBeGreaterThan(9_999_900);const migrated=importProject(raw);expect(migrated.version).toBe(3);expect(exportProject(migrated)).toContain('"version": 3');expect(migrated.transcripts).toEqual(legacy.transcripts);});
-it('preserves valid v2 projects at their former 15 MB ceiling when board fields are introduced',()=>{const p:any=demoProject(true);p.version=2;p.transcripts=[];delete p.boardGroups;delete p.comments;for(let i=0;i<17;i++)p.transcripts.push({id:`big-source-${i}`,name:`Source ${i}`,text:'x'.repeat(880_000),createdAt:p.createdAt,turns:[{id:`big-turn-${i}`,label:'P',role:'unassigned',start:0,end:880_000}]});const extra=14_999_980-JSON.stringify(p,null,2).length;p.transcripts[0].text+='x'.repeat(extra);p.transcripts[0].turns[0].end+=extra;const raw=JSON.stringify(p,null,2);expect(raw.length).toBeLessThan(15_000_000);expect(raw.length).toBeGreaterThan(14_999_900);const migrated=importProject(raw);expect(migrated.version).toBe(3);expect(migrated.transcripts).toEqual(p.transcripts);expect(exportProject(migrated).length).toBeGreaterThan(raw.length);});
+it('roundtrips guidance, chosen examples, manual themes, linked memos and exact sources', () => {
+  const { p } = linked();
+  expect(importProject(exportProject(p))).toEqual(p);
+  expect(themeCSV(p)).toContain('my-group');
+});
+it('migrates v1 without modifying input, IDs, original bytes or offsets', () => {
+  const { p } = linked();
+  const legacy: any = copy(p);
+  legacy.version = 1;
+  delete legacy.themes;
+  for (const c of legacy.codes) {
+    delete c.inclusion;
+    delete c.exclusion;
+    delete c.exampleQuoteIds;
+  }
+  for (const m of legacy.memos) delete m.quoteIds;
+  const before = JSON.stringify(legacy);
+  const migrated = importProject(before);
+  expect(JSON.stringify(legacy)).toBe(before);
+  expect(migrated.version).toBe(3);
+  expect(migrated.transcripts).toEqual(legacy.transcripts);
+  expect(migrated.quotes).toEqual(legacy.quotes);
+  expect(migrated.themes).toEqual([]);
+  expect(migrated.memos[0].body).toBe(legacy.memos[0].body);
+  expect(validateProject(migrated)).toEqual(migrated);
+});
+it('rejects invalid v1 source evidence during migration', () => {
+  const { p } = linked();
+  const legacy: any = copy(p);
+  legacy.version = 1;
+  legacy.quotes[0].text = 'An invented interpretation';
+  expect(() => importProject(JSON.stringify(legacy))).toThrow(/quote does not match/);
+});
+it('merging updates all links, keeps guidance/examples and counts exact quotes only once', () => {
+  const { p, a, b } = linked();
+  const sources = copy(p.transcripts),
+    quotes = copy(p.quotes);
+  mergeCodes(p, a.id, b.id);
+  expect(p.themes[0].codeIds).toEqual([b.id]);
+  expect(b.exampleQuoteIds).toHaveLength(2);
+  expect(b.inclusion).toContain('My inclusion guide');
+  expect(b.exclusion).toContain('My exclusion guide');
+  expect(p.quotes.map(q => q.id)).toEqual(quotes.map(q => q.id));
+  expect(p.transcripts).toEqual(sources);
+  expect(coverageRows(p).map(r => r.counts[b.id])).toEqual([1, 1]);
+  expect(validateProject(p)).toEqual(p);
+});
+it('removing a quote cleans references but preserves authored prose', () => {
+  const { p, a } = linked();
+  const before = copy(p);
+  removeQuote(p, p.quotes[0].id);
+  expect(a.exampleQuoteIds).toEqual([]);
+  expect(p.themes[0].quoteIds).toHaveLength(1);
+  expect(p.themes[0].body).toBe(before.themes[0].body);
+  expect(p.memos[0].quoteIds).toHaveLength(1);
+  expect(p.memos[0].body).toBe(before.memos[0].body);
+  expect(validateProject(p)).toEqual(p);
+});
+it('keeps identical participant labels in separate source rows', () => {
+  const { p, a } = linked();
+  const rows = coverageRows(p);
+  expect(rows).toHaveLength(2);
+  expect(rows[0].speaker).toBe(rows[1].speaker);
+  expect(rows[0].transcriptId).not.toBe(rows[1].transcriptId);
+  expect(rows.map(r => r.counts[a.id])).toEqual([1, 1]);
+});
+for (const kind of ['theme quote', 'theme code', 'example', 'memo', 'duplicate example', 'example without code', 'authorship'])
+  it(`rejects invalid ${kind} links`, () => {
+    const { p, a, b } = linked();
+    if (kind === 'theme quote') p.themes[0].quoteIds = ['missing'];
+    if (kind === 'theme code') p.themes[0].codeIds = ['missing'];
+    if (kind === 'example') a.exampleQuoteIds = ['missing'];
+    if (kind === 'memo') p.memos[0].quoteIds = ['missing'];
+    if (kind === 'duplicate example') a.exampleQuoteIds = [p.quotes[0].id, p.quotes[0].id];
+    if (kind === 'example without code') p.quotes[0].codeIds = [b.id];
+    if (kind === 'authorship') (p.themes[0] as any).author = 'model';
+    expect(() => importProject(JSON.stringify(p))).toThrow(/Invalid project/);
+  });
+it('preflights guidance overflow without partial merge changes', () => {
+  const { p, a, b } = linked();
+  a.inclusion = 'a'.repeat(12_000);
+  b.inclusion = 'b'.repeat(12_000);
+  const before = copy(p);
+  expect(() => mergeCodes(p, a.id, b.id)).toThrow(/Combined guidance/);
+  expect(p).toEqual(before);
+});
+it('rejects missing v2 fields rather than silently resetting links', () => {
+  const { p } = linked();
+  delete (p.codes[0] as any).exampleQuoteIds;
+  expect(() => validateProject(p)).toThrow(/malformed code/);
+});
+it('migrates a valid v1 backup near the old byte ceiling and exports it as v2', () => {
+  const legacy: any = demoProject(true);
+  legacy.version = 1;
+  delete legacy.themes;
+  legacy.transcripts = [];
+  for (let i = 0; i < 10; i++) {
+    const t = {
+      id: `source-${i}`,
+      name: `Source ${i}`,
+      text: 'x'.repeat(995_000),
+      createdAt: legacy.createdAt,
+      turns: [{ id: `turn-${i}`, label: 'P', role: 'unassigned', start: 0, end: 995_000 }],
+    };
+    legacy.transcripts.push(t);
+  }
+  const initial = JSON.stringify(legacy, null, 2).length;
+  const extra = 9_999_990 - initial;
+  legacy.transcripts.push({
+    id: 'last',
+    name: 'Last',
+    text: 'x',
+    createdAt: legacy.createdAt,
+    turns: [{ id: 'last-turn', label: 'P', role: 'unassigned', start: 0, end: 1 }],
+  });
+  const delta = 9_999_990 - JSON.stringify(legacy, null, 2).length;
+  legacy.transcripts[10].text = 'x'.repeat(delta - 12);
+  legacy.transcripts[10].turns[0].end = legacy.transcripts[10].text.length;
+  expect(extra).toBeGreaterThan(0);
+  const raw = JSON.stringify(legacy, null, 2);
+  expect(raw.length).toBeLessThanOrEqual(10_000_000);
+  expect(raw.length).toBeGreaterThan(9_999_900);
+  const migrated = importProject(raw);
+  expect(migrated.version).toBe(3);
+  expect(exportProject(migrated)).toContain('"version": 3');
+  expect(migrated.transcripts).toEqual(legacy.transcripts);
+});
+it('preserves valid v2 projects at their former 15 MB ceiling when board fields are introduced', () => {
+  const p: any = demoProject(true);
+  p.version = 2;
+  p.transcripts = [];
+  delete p.boardGroups;
+  delete p.comments;
+  for (let i = 0; i < 17; i++)
+    p.transcripts.push({
+      id: `big-source-${i}`,
+      name: `Source ${i}`,
+      text: 'x'.repeat(880_000),
+      createdAt: p.createdAt,
+      turns: [{ id: `big-turn-${i}`, label: 'P', role: 'unassigned', start: 0, end: 880_000 }],
+    });
+  const extra = 14_999_980 - JSON.stringify(p, null, 2).length;
+  p.transcripts[0].text += 'x'.repeat(extra);
+  p.transcripts[0].turns[0].end += extra;
+  const raw = JSON.stringify(p, null, 2);
+  expect(raw.length).toBeLessThan(15_000_000);
+  expect(raw.length).toBeGreaterThan(14_999_900);
+  const migrated = importProject(raw);
+  expect(migrated.version).toBe(3);
+  expect(migrated.transcripts).toEqual(p.transcripts);
+  expect(exportProject(migrated).length).toBeGreaterThan(raw.length);
+});
