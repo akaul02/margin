@@ -637,7 +637,7 @@ export function removeMemo(p: Project, id: string) {
   if (!p.memos.some(m => m.id === id)) throw new Error('This memo no longer exists.');
   p.memos = p.memos.filter(m => m.id !== id);
 }
-/** Board order is array order. Local live sessions sync group contents, not their order. */
+/** Board order is array order; conditional order operations preserve independent group-content edits. */
 export function moveGroup(p: Project, id: string, by: -1 | 1) {
   const i = p.boardGroups.findIndex(g => g.id === id);
   if (i < 0) throw new Error('This board group no longer exists.');

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { recordAt } from '../shared/operations.mjs';
+import { recordAt, type RecordChange } from '../shared/operations.mjs';
 import { download, type Project, type SharedConnection } from './model';
 import { Dialog, ErrorBox } from './ui';
 
@@ -10,6 +10,11 @@ function words(value: any) {
     [value.by, value.title ?? value.name, value.body ?? value.description ?? value.text].filter(Boolean).join('\n\n') ||
     JSON.stringify(value, null, 2)
   );
+}
+function versionWords(project: Project, change: RecordChange) {
+  if (change.collection === 'order' && change.id === 'boardGroups')
+    return project.boardGroups.map((group, index) => `${index + 1}. ${group.title}`).join('\n') || 'No board groups';
+  return words(recordAt(project, change));
 }
 export function ConflictDialog({
   project,
@@ -57,17 +62,23 @@ export function ConflictDialog({
       {operation?.changes.map(c => (
         <section className="conflict-record" key={`${c.collection}:${c.id}`}>
           <h3>
-            {c.collection === 'comments' ? 'Card note' : c.collection === 'quotes' ? 'Quote card' : c.collection}{' '}
-            <small>{c.id.slice(0, 8)}</small>
+            {c.collection === 'order'
+              ? 'Board group order'
+              : c.collection === 'comments'
+                ? 'Card note'
+                : c.collection === 'quotes'
+                  ? 'Quote card'
+                  : c.collection}{' '}
+            {c.collection !== 'order' && <small>{c.id.slice(0, 8)}</small>}
           </h3>
           <div className="conflict-versions">
             <div>
               <h4>Your local version</h4>
-              <pre>{words(recordAt(project, c))}</pre>
+              <pre>{versionWords(project, c)}</pre>
             </div>
             <div>
               <h4>Shared version at conflict</h4>
-              <pre>{words(recordAt(conflict.remote, c))}</pre>
+              <pre>{versionWords(conflict.remote, c)}</pre>
             </div>
           </div>
         </section>

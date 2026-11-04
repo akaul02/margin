@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { copy, importProject, readTextFile, uid, type Project, type Workspace } from '../model';
 import { ErrorBox, Dialog, Field } from '../ui';
 
@@ -15,22 +15,42 @@ export function RestoreDialog({
 }) {
   const [draft, setDraft] = useState<Project | null>(null);
   const [localError, setLocalError] = useState('');
+  const [reading, setReading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const readVersion = useRef(0);
+  const submitting = useRef(false);
+  useEffect(
+    () => () => {
+      readVersion.current++;
+    },
+    [],
+  );
+  const closeDialog = () => {
+    if (!submitting.current) close();
+  };
   const duplicate = draft && workspace.projects.some(p => p.id === draft.id);
   return (
-    <Dialog title="Open a project backup" subtitle="Restore a Margin .margin.json file. Existing projects are kept." close={close}>
+    <Dialog title="Open a project backup" subtitle="Restore a Margin .margin.json file. Existing projects are kept." close={closeDialog}>
       <Field label="Project backup file">
         <input
           type="file"
           accept=".json,application/json"
+          disabled={saving}
           onChange={async e => {
+            if (submitting.current) return;
             const f = e.target.files?.[0];
-            if (!f) return;
+            const version = ++readVersion.current;
             setDraft(null);
+            setLocalError('');
+            setReading(!!f);
+            if (!f) return;
             try {
-              setDraft(importProject(await readTextFile(f, 16_000_000)));
-              setLocalError('');
+              const project = importProject(await readTextFile(f, 16_000_000));
+              if (version === readVersion.current) setDraft(project);
             } catch (e) {
-              setLocalError((e as Error).message);
+              if (version === readVersion.current) setLocalError((e as Error).message);
+            } finally {
+              if (version === readVersion.current) setReading(false);
             }
           }}
         />
@@ -49,20 +69,37 @@ export function RestoreDialog({
           )}
         </div>
       )}
+      {(reading || saving) && (
+        <p role="status" className="small muted">
+          {reading ? 'Reading your backup…' : 'Saving your project…'}
+        </p>
+      )}
       <ErrorBox error={localError || error} />
       <div className="dialog-actions">
-        <button onClick={close}>Cancel</button>
+        <button disabled={saving} onClick={closeDialog}>
+          Cancel
+        </button>
         <button
           className="primary"
-          disabled={!draft}
-          onClick={() => {
-            if (draft) {
+          disabled={!draft || reading || saving}
+          onClick={async () => {
+            if (draft && !submitting.current) {
+              submitting.current = true;
+              setSaving(true);
+              setLocalError('');
               const p = copy(draft);
               if (duplicate) {
                 p.id = uid();
                 p.name = p.name.slice(0, 112) + ' (copy)';
               }
-              submit(p);
+              try {
+                await submit(p);
+              } catch (e) {
+                setLocalError((e as Error).message);
+              } finally {
+                submitting.current = false;
+                setSaving(false);
+              }
             }
           }}
         >

@@ -1,10 +1,11 @@
 import { build } from 'esbuild';
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startRoomServer } from './room-server.mjs';
 import { dataKey, defaultDataDir, openStore } from './store.mjs';
-import { keyedLink, openInBrowser } from './open.mjs';
+import { keyedLink, openInBrowser, reportBrowserOpenError } from './open.mjs';
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const preview = process.argv.includes('--preview');
 const port = Number(process.env.MARGIN_PORT) || (preview ? 4178 : 5173),
@@ -33,6 +34,9 @@ const service = await startRoomServer({
 });
 console.log(`Margin local sharing: http://127.0.0.1:${apiPort} (loopback only)`);
 console.log(store ? `Margin data file: ${store.file}` : 'Margin is saving projects in browser storage.');
+// Readiness must belong to this start, not another service already on the port.
+// This marker is not a data-file key and grants no access to project data.
+const instance = randomUUID();
 const child = spawn(
   process.execPath,
   [
@@ -43,14 +47,19 @@ const child = spawn(
     '--port',
     String(port),
     '--strictPort',
-    ...(process.argv.includes('--open') && !key ? ['--open'] : []),
   ],
-  { cwd: root, stdio: 'inherit', env: { ...process.env, MARGIN_API_ORIGIN: `http://127.0.0.1:${apiPort}` } },
+  {
+    cwd: root,
+    stdio: 'inherit',
+    env: { ...process.env, MARGIN_API_ORIGIN: `http://127.0.0.1:${apiPort}`, MARGIN_START_INSTANCE: instance },
+  },
 );
 let stopping = false;
+const browserOpening = new AbortController();
 async function stop() {
   if (stopping) return;
   stopping = true;
+  browserOpening.abort();
   child.kill('SIGTERM');
   await service.close();
   store?.close();
@@ -69,17 +78,31 @@ child.on('error', async () => {
   await stop();
   process.exitCode = 1;
 });
-if (process.argv.includes('--open') && key) {
+if (process.argv.includes('--open')) {
   // Open once the page answers, with the key so this browser can read the data file.
-  for (let i = 0; i < 100; i++) {
-    if (
-      await fetch(`http://127.0.0.1:${port}/`).then(
-        r => r.ok,
-        () => false,
-      )
-    )
-      break;
+  let ready = false;
+  for (let i = 0; i < 100 && !stopping; i++) {
+    ready = await fetch(`http://127.0.0.1:${port}/`, {
+      signal: AbortSignal.any([browserOpening.signal, AbortSignal.timeout(1_000)]),
+    }).then(
+      r => r.ok && r.headers.get('X-Margin-Instance') === instance,
+      () => false,
+    );
+    if (ready || stopping) break;
     await new Promise(r => setTimeout(r, 200));
   }
-  openInBrowser(keyedLink(port, key));
+  if (ready && !stopping) {
+    try {
+      await openInBrowser(key ? keyedLink(port, key) : `http://127.0.0.1:${port}/`, { signal: browserOpening.signal });
+    } catch (error) {
+      if (!stopping) {
+        console.error('Margin is still running, but its browser could not be opened.');
+        reportBrowserOpenError(error, port, fileDir, preview);
+      }
+    }
+  } else if (!stopping) {
+    console.error(
+      'Margin did not become ready in time, so no browser was opened. Check the server output, then run npm run open when it is ready.',
+    );
+  }
 }

@@ -41,11 +41,12 @@ Requires Node 22.13 or newer.
 
 ```sh
 npm ci
-npm run dev
-npm run open
+npm run dev -- --open
 ```
 
-`npm run dev` starts Margin on http://127.0.0.1:5173 and `npm run open` opens it in your browser. `npm run build` followed by `npm run preview` serves the production build on http://127.0.0.1:4178.
+This starts Margin on http://127.0.0.1:5173 and opens your browser with access to the local data file. Leave this terminal running while you work; press Ctrl+C to stop the app. To reopen it while the server is running, run `npm run open` in a second terminal in the same folder, with the same storage and data-folder settings.
+
+For a production build, run `npm run build`, then `npm run preview -- --open`. This serves Margin on http://127.0.0.1:4178. To reopen that server, use `npm run open -- --preview` in a second terminal. If you set `MARGIN_PORT`, use that same value when reopening.
 
 ## Privacy and where work is saved
 

@@ -44,6 +44,8 @@ async function restore(page: Page, raw: string) {
 test('welcome, empty project and accessible first steps', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Margin', exact: true })).toBeVisible();
+  // Check the settled colors after the welcome bubble's entrance fade.
+  await page.locator('.seal-hello-bubble').evaluate(el => Promise.all(el.getAnimations().map(animation => animation.finished)));
   await page.screenshot({ path: 'screenshots/01-welcome-desktop.png', fullPage: true });
   const scan = await new AxeBuilder({ page }).analyze();
   expect(scan.violations).toEqual([]);

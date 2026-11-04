@@ -3,6 +3,7 @@ import { defineConfig, normalizePath, type Plugin, type ResolvedConfig, type Use
 
 export function marginConfig(sharedDirectory = process.env.MARGIN_SHARED_DIR): UserConfig {
   const customRoomDir = sharedDirectory ? path.resolve(sharedDirectory) : undefined;
+  const startInstance = process.env.MARGIN_START_INSTANCE;
   let config: ResolvedConfig;
   const privateRooms: Plugin = {
     name: 'margin-private-room-files',
@@ -21,6 +22,7 @@ export function marginConfig(sharedDirectory = process.env.MARGIN_SHARED_DIR): U
     res: { statusCode: number; setHeader: (key: string, value: string) => void; end: (body: string) => void },
     next: () => void,
   ) {
+    if (startInstance) res.setHeader('X-Margin-Instance', startInstance);
     let pathname: string;
     try {
       pathname = decodeURIComponent(new URL(req.url ?? '/', 'http://localhost').pathname).replaceAll('\\', '/');

@@ -768,7 +768,7 @@ export default function App() {
     if (
       await change(p => {
         const q = saveQuoteCard(p, s.transcriptId, s.turnId, s.start, s.end, s.text);
-        if (groupId) moveCard(p, q.id, groupId);
+        moveCard(p, q.id, groupId);
       }, `Quote card added to ${title}.`)
     ) {
       setSelection(null);

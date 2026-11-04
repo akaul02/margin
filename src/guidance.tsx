@@ -40,10 +40,11 @@ const steps: { id: TipId; views: TipView[]; text: string; done: (p: Project) => 
   },
 ];
 const tipsKey = (projectId: string) => `margin-tips:${projectId}`;
-function readJSON<T>(key: string, fallback: T): T {
+function readJSON<T>(key: string, fallback: T, valid: (value: unknown) => value is T): T {
   try {
     const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
+    const value: unknown = raw ? JSON.parse(raw) : undefined;
+    return valid(value) ? value : fallback;
   } catch {
     return fallback;
   }
@@ -58,9 +59,11 @@ function writeJSON(key: string, value: unknown) {
 
 export function useTips(project: Project | null, view: TipView) {
   const [dismissed, setDismissed] = useState<Record<string, string[]>>({});
-  const [off, setOff] = useState(() => readJSON('margin-tips-off', false));
+  const [off, setOff] = useState(() => readJSON('margin-tips-off', false, (value): value is boolean => typeof value === 'boolean'));
   if (!project || off) return { current: null, dismiss: () => {}, turnOff: () => {} };
-  const gone = dismissed[project.id] ?? readJSON<string[]>(tipsKey(project.id), []);
+  const gone =
+    dismissed[project.id] ??
+    readJSON(tipsKey(project.id), [], (value): value is string[] => Array.isArray(value) && value.every(item => typeof item === 'string'));
   const index = steps.findIndex(s => !s.done(project) && !gone.includes(s.id));
   const step = index >= 0 && steps[index].views.includes(view) ? steps[index] : null;
   return {
@@ -120,7 +123,15 @@ export function Tip({
 export const UNGROUPED_KEY = '0';
 const keysKey = (projectId: string) => `margin-keys:${projectId}`;
 export function readCustomKeys(projectId: string) {
-  return readJSON<Record<string, string>>(keysKey(projectId), {});
+  return readJSON(
+    keysKey(projectId),
+    {},
+    (value): value is Record<string, string> =>
+      !!value &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      Object.values(value).every(key => typeof key === 'string' && /^[a-z0-9]$/.test(key)),
+  );
 }
 export function saveCustomKeys(projectId: string, keys: Record<string, string>) {
   writeJSON(keysKey(projectId), keys);

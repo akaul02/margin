@@ -18,8 +18,18 @@ test('local save status is accessible, survives reload, and backup opens in a fr
   await page.locator('.tip').evaluate(el => Promise.all(el.getAnimations().map(animation => animation.finished)));
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.evaluate(() => (document.documentElement.dataset.theme = 'dark'));
-  await page.locator('.tip').evaluate(el => Promise.all(el.getAnimations().map(animation => animation.finished)));
+  await page.getByRole('button', { name: 'Display settings' }).click();
+  await page.getByRole('radio', { name: 'Dark', exact: true }).check();
+  await page.keyboard.press('Escape');
+  // Theme colors transition on buttons as well as the tip. Inspect their settled state.
+  await page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter(animation => animation.effect?.getTiming().iterations !== Infinity)
+        .map(animation => animation.finished),
+    ),
+  );
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.getByRole('button', { name: 'Save backup', exact: true }).focus();

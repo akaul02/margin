@@ -10,6 +10,11 @@ export function canonical(value) {
   return JSON.stringify(value);
 }
 export const equal = (a, b) => canonical(a) === canonical(b);
+const sameMembers = (a, b) => {
+  if (a.length !== b.length) return false;
+  const ids = new Set(a);
+  return ids.size === a.length && new Set(b).size === b.length && b.every(id => ids.has(id));
+};
 export function diffProject(before, after) {
   if (before.id !== after.id) throw new Error('A change cannot replace the project identity.');
   const changes = [];
@@ -25,6 +30,12 @@ export function diffProject(before, after) {
   }
   for (const field of ['name', 'synthetic'])
     if (!equal(before[field], after[field])) changes.push({ collection: 'project', id: field, before: before[field], after: after[field] });
+  // A permutation is its own conditional edit, independent of group contents.
+  // Creation/deletion keeps the usual collection operation semantics.
+  const previousOrder = (before.boardGroups ?? []).map(group => group.id);
+  const nextOrder = (after.boardGroups ?? []).map(group => group.id);
+  if (!equal(previousOrder, nextOrder) && sameMembers(previousOrder, nextOrder))
+    changes.push({ collection: 'order', id: 'boardGroups', before: previousOrder, after: nextOrder });
   return changes;
 }
 export function validateOperation(op) {
@@ -66,14 +77,26 @@ export function validateOperation(op) {
       if (!['name', 'synthetic'].includes(c.id)) bad();
       const type = c.id === 'name' ? 'string' : 'boolean';
       if (typeof c.before !== type || typeof c.after !== type) bad();
+    } else if (c.collection === 'order') {
+      const validOrder = value =>
+        Array.isArray(value) &&
+        value.length > 0 &&
+        value.length <= 20_000 &&
+        value.every(id => typeof id === 'string' && /^[a-zA-Z0-9_-]{1,100}$/.test(id));
+      if (c.id !== 'boardGroups' || !validOrder(c.before) || !validOrder(c.after) || !sameMembers(c.before, c.after)) bad();
     } else {
       if (!collections.includes(c.collection)) bad();
       for (const v of [c.before, c.after]) if (v !== null && (!v || typeof v !== 'object' || Array.isArray(v) || v.id !== c.id)) bad();
     }
   }
+  // A reorder must not add/remove records as a side effect, regardless of the
+  // order of changes supplied by a client. Ordinary content edits may coexist.
+  if (seen.has('order:boardGroups') && op.changes.some(c => c.collection === 'boardGroups' && (c.before === null || c.after === null)))
+    bad();
   return op;
 }
 export function recordAt(project, change) {
+  if (change.collection === 'order') return (project.boardGroups ?? []).map(group => group.id);
   return change.collection === 'project' ? project[change.id] : ((project[change.collection] ?? []).find(x => x.id === change.id) ?? null);
 }
 export function applyOperation(project, operation) {
@@ -83,6 +106,7 @@ export function applyOperation(project, operation) {
   if (conflicts.length) return { conflicts, project: null };
   const next = structuredClone(project);
   for (const c of operation.changes) {
+    if (c.collection === 'order') continue;
     if (c.collection === 'project') {
       next[c.id] = c.after;
       continue;
@@ -92,6 +116,11 @@ export function applyOperation(project, operation) {
     if (c.after === null) next[c.collection].splice(index, 1);
     else if (index < 0) next[c.collection].push(structuredClone(c.after));
     else next[c.collection][index] = structuredClone(c.after);
+  }
+  for (const c of operation.changes.filter(c => c.collection === 'order')) {
+    const groups = new Map(next.boardGroups.map(group => [group.id, group]));
+    if (!sameMembers([...groups.keys()], c.after)) return { conflicts: [c], project: null };
+    next.boardGroups = c.after.map(id => groups.get(id));
   }
   next.updatedAt = operation.at;
   return { conflicts: [], project: next };

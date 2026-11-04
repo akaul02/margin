@@ -137,7 +137,14 @@ export function QuoteBoard({
   // The card being dragged, read synchronously by drop targets; `drag` only drives the faded look.
   const dragged = useRef<Drag | null>(null);
   // Which descriptions are open, and which section is picked, are per-device view preferences.
-  const [about, setAbout] = useState<Record<string, boolean>>(() => readPref(`margin-about:${p.id}`, {}));
+  const [about, setAbout] = useState(() =>
+    readPref(
+      `margin-about:${p.id}`,
+      {},
+      (value): value is Record<string, boolean> =>
+        !!value && typeof value === 'object' && !Array.isArray(value) && Object.values(value).every(open => typeof open === 'boolean'),
+    ),
+  );
   const toggleAbout = (id: string) =>
     setAbout(state => {
       const next = { ...state, [id]: !state[id] };
@@ -146,7 +153,7 @@ export function QuoteBoard({
     });
   const sections = [...new Set(p.boardGroups.map(g => splitTitle(g.title).section))];
   const indexed = sections.length > 1;
-  const [picked, setPicked] = useState<string>(() => readPref(`margin-section:${p.id}`, ''));
+  const [picked, setPicked] = useState(() => readPref(`margin-section:${p.id}`, '', (value): value is string => typeof value === 'string'));
   const section = indexed ? (sections.includes(picked) ? picked : sections[0]) : '';
   const { quotes, notes, sources, comments } = useMemo(
     () => ({
@@ -719,6 +726,9 @@ function NoteDraft({
         disabled={busy}
         onChange={e => draft.update({ ...draft.value, text: e.target.value })}
         onKeyDown={e => {
+          // Enter/Escape belong to the input method while a character is being composed.
+          // Also accept the legacy composition key code when isComposing is false.
+          if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             void finish('save');
@@ -751,10 +761,11 @@ function NoteDraft({
     </div>
   );
 }
-const readPref = <T,>(key: string, fallback: T): T => {
+const readPref = <T,>(key: string, fallback: T, valid: (value: unknown) => value is T): T => {
   try {
     const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
+    const value: unknown = raw ? JSON.parse(raw) : undefined;
+    return valid(value) ? value : fallback;
   } catch {
     return fallback;
   }

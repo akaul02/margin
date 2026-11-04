@@ -81,6 +81,42 @@ async function disk(room: Room) {
   return fs.readFile(path.join(dir, `${room.id}.json`), 'utf8');
 }
 
+it('persists and undoes board order while retaining independent group contents and rejecting stale reorders', async () => {
+  const project = fixture();
+  project.boardGroups = ['one', 'two', 'three'].map((id, index) => ({
+    id,
+    title: `Synthetic group ${index + 1}`,
+    color: index,
+    quoteIds: [],
+    createdAt: AT,
+    updatedAt: AT,
+  }));
+  const room = await create(project);
+  const reorder = operation(project, p => p.boardGroups.reverse());
+  const competing = operation(project, p => {
+    [p.boardGroups[0], p.boardGroups[1]] = [p.boardGroups[1], p.boardGroups[0]];
+  });
+  const content = operation(project, p => {
+    p.boardGroups[0].note = 'Keep this independently written description.';
+  });
+  expect((await post(room, content)).status).toBe(200);
+  const ordered = await post(room, reorder);
+  expect(ordered.status).toBe(200);
+  expect(ordered.body.project.boardGroups.map((g: { id: string }) => g.id)).toEqual(['three', 'two', 'one']);
+  expect(ordered.body.project.boardGroups[2].note).toBe('Keep this independently written description.');
+  const beforeConflict = await disk(room);
+  expect((await post(room, competing)).status).toBe(409);
+  expect(await disk(room)).toBe(beforeConflict);
+  await service.close();
+  await start();
+  expect((await post(room, reorder)).body.duplicate).toBe(true);
+  const restored = await post(room, inverseOperation(reorder, crypto.randomUUID(), AT));
+  expect(restored.status).toBe(200);
+  expect(restored.body.project.boardGroups.map((g: { id: string }) => g.id)).toEqual(['one', 'two', 'three']);
+  expect(restored.body.project.boardGroups[0].note).toBe('Keep this independently written description.');
+  expect((await head(room)).project).toEqual(restored.body.project);
+});
+
 it('commits concurrent disjoint notes exactly once without losing either note', async () => {
   const room = await create();
   const ops = [

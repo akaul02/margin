@@ -8,7 +8,7 @@ import { createHostedHandler } from '../server/hosted-service';
 import { publicConfiguration } from '../server/supabase';
 import { demoProject } from '../src/demo';
 import { newProject, makeTranscript, saveQuoteCard, type Project } from '../src/model';
-import { diffProject, type Operation } from '../shared/operations.mjs';
+import { diffProject, inverseOperation, type Operation } from '../shared/operations.mjs';
 import { assertHostedProject, HOSTED_PROJECT_BYTES, HOSTED_OPERATION_BYTES } from '../shared/hosted-limits';
 import { ACTOR_A, ACTOR_B, ACTOR_C, testDatabase, databaseRpc } from './support/pglite';
 
@@ -75,6 +75,43 @@ afterAll(async () => {
   await database?.db.close();
 });
 describe('hosted API against real local PostgreSQL', () => {
+  it('commits conditional board order, preserves group edits and supports retry and undo', async () => {
+    const project = syntheticProject(),
+      at = new Date().toISOString();
+    project.boardGroups = ['one', 'two', 'three'].map((id, index) => ({
+      id,
+      title: `Synthetic group ${index + 1}`,
+      color: index,
+      quoteIds: [],
+      createdAt: at,
+      updatedAt: at,
+    }));
+    const room = await create(project);
+    const edit = (mutate: (p: Project) => void): Operation => {
+      const next = structuredClone(project);
+      mutate(next);
+      return { id: randomUUID(), projectId: project.id, at, label: 'Synthetic group edit', changes: diffProject(project, next) };
+    };
+    const reorder = edit(p => p.boardGroups.reverse());
+    const competing = edit(p => {
+      [p.boardGroups[0], p.boardGroups[1]] = [p.boardGroups[1], p.boardGroups[0]];
+    });
+    const content = edit(p => {
+      p.boardGroups[0].note = 'An independently written description.';
+    });
+    expect((await request(`/rooms/${room.id}/operations`, 'POST', content)).status).toBe(200);
+    const saved = await request(`/rooms/${room.id}/operations`, 'POST', reorder);
+    expect(saved.status).toBe(200);
+    expect(saved.data.project.boardGroups.map((g: { id: string }) => g.id)).toEqual(['three', 'two', 'one']);
+    expect(saved.data.project.boardGroups[2].note).toBe('An independently written description.');
+    expect((await request(`/rooms/${room.id}/operations`, 'POST', competing)).status).toBe(409);
+    expect((await request(`/rooms/${room.id}/operations`, 'POST', reorder)).data.receipt.id).toBe(reorder.id);
+    const restored = await request(`/rooms/${room.id}/operations`, 'POST', inverseOperation(reorder, randomUUID(), at));
+    expect(restored.status).toBe(200);
+    expect(restored.data.project.boardGroups.map((g: { id: string }) => g.id)).toEqual(['one', 'two', 'three']);
+    expect(restored.data.project.boardGroups[0].note).toBe('An independently written description.');
+    expect((await request(`/rooms/${room.id}`)).data.project).toEqual(restored.data.project);
+  });
   it('requires a verified bearer and never trusts actor/body/cookie/query identity', async () => {
     const room = await create();
     const anonymous = await handle(

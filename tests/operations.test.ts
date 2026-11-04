@@ -38,6 +38,127 @@ function applied(before: Project, op: Operation): Project {
   return result.project!;
 }
 
+function groupedFixture() {
+  const p = fixture();
+  p.boardGroups = ['one', 'two', 'three'].map((id, index) => ({
+    id,
+    title: `Synthetic group ${index + 1}`,
+    color: index,
+    quoteIds: index === 0 ? [p.quotes[0].id] : [],
+    createdAt: AT,
+    updatedAt: AT,
+  }));
+  return validateProject(p);
+}
+
+describe('conditional board group order', () => {
+  it('captures a pure permutation and undoes it without replacing source or group records', () => {
+    const base = groupedFixture();
+    const reorder = operation(base, p => p.boardGroups.reverse());
+    expect(reorder.changes).toEqual([
+      { collection: 'order', id: 'boardGroups', before: ['one', 'two', 'three'], after: ['three', 'two', 'one'] },
+    ]);
+    const current = applied(base, reorder);
+    expect(current.boardGroups).toEqual([...base.boardGroups].reverse());
+    expect(current.transcripts).toEqual(base.transcripts);
+    expect(current.quotes).toEqual(base.quotes);
+    expect(applied(current, inverseOperation(reorder, crypto.randomUUID(), AT)).boardGroups).toEqual(base.boardGroups);
+    expect(base.boardGroups.map(g => g.id)).toEqual(['one', 'two', 'three']);
+  });
+
+  it.each([false, true])('preserves a concurrent group-content edit in either arrival order (reorder first=%s)', reorderFirst => {
+    const base = groupedFixture();
+    const reorder = operation(base, p => p.boardGroups.reverse());
+    const content = operation(base, p => {
+      p.boardGroups[0].note = 'A later human-authored interpretation.';
+    });
+    const current = reorderFirst ? applied(applied(base, reorder), content) : applied(applied(base, content), reorder);
+    expect(current.boardGroups.map(g => g.id)).toEqual(['three', 'two', 'one']);
+    expect(current.boardGroups[2].note).toBe('A later human-authored interpretation.');
+    const undone = applied(current, inverseOperation(reorder, crypto.randomUUID(), AT));
+    expect(undone.boardGroups.map(g => g.id)).toEqual(['one', 'two', 'three']);
+    expect(undone.boardGroups[0].note).toBe('A later human-authored interpretation.');
+    expect(validateProject(undone)).toEqual(undone);
+  });
+
+  it('applies group-content edits and a permutation together regardless of delta ordering', () => {
+    const base = groupedFixture();
+    const edit = operation(base, p => {
+      p.boardGroups[0].title = 'Revised title';
+      p.boardGroups.reverse();
+    });
+    for (const changes of [edit.changes, [...edit.changes].reverse()]) {
+      const current = applied(base, { ...edit, changes });
+      expect(current.boardGroups.map(g => g.id)).toEqual(['three', 'two', 'one']);
+      expect(current.boardGroups[2].title).toBe('Revised title');
+      expect(applied(current, inverseOperation({ ...edit, changes }, crypto.randomUUID(), AT)).boardGroups).toEqual(base.boardGroups);
+    }
+  });
+
+  it.each(['reorder', 'addition', 'deletion'])('rejects a stale reorder after another %s without a partial edit', change => {
+    const base = groupedFixture();
+    const reorder = operation(base, p => {
+      p.boardGroups.reverse();
+      p.name = 'Must not partly apply';
+    });
+    const current = structuredClone(base);
+    if (change === 'reorder') [current.boardGroups[0], current.boardGroups[1]] = [current.boardGroups[1], current.boardGroups[0]];
+    if (change === 'addition') current.boardGroups.push({ ...current.boardGroups[1], id: 'new-group' });
+    if (change === 'deletion') current.boardGroups.pop();
+    const snapshot = structuredClone(current);
+    expect(applyOperation(current, reorder)).toMatchObject({ project: null, conflicts: [{ collection: 'order', id: 'boardGroups' }] });
+    expect(current).toEqual(snapshot);
+  });
+
+  it.each([
+    ['duplicate IDs', ['one', 'one', 'three'], ['three', 'one', 'one']],
+    ['missing IDs', ['one', 'two', 'three'], ['three', 'one']],
+    ['replacement IDs', ['one', 'two', 'three'], ['three', 'two', 'foreign']],
+    ['invalid ID', ['one', 'two', 'bad id'], ['bad id', 'two', 'one']],
+    ['empty IDs', ['one', 'two', ''], ['', 'two', 'one']],
+    ['object payload', { one: true }, ['one']],
+    ['unbounded list', Array.from({ length: 20_001 }, (_, i) => `g${i}`), Array.from({ length: 20_001 }, (_, i) => `g${20_000 - i}`)],
+  ])('rejects malformed ordering: %s', (_name, before, after) => {
+    const base = groupedFixture();
+    const op = operation(base, p => p.boardGroups.reverse());
+    op.changes[0] = { collection: 'order', id: 'boardGroups', before, after };
+    expect(() => validateOperation(op)).toThrow('Invalid saved operation');
+  });
+
+  it('rejects unsupported ordered collections and foreign current memberships', () => {
+    const base = groupedFixture();
+    const op = operation(base, p => p.boardGroups.reverse());
+    expect(() => validateOperation({ ...op, changes: [{ ...op.changes[0], id: 'transcripts' }] })).toThrow();
+    const foreign = { ...op, changes: [{ collection: 'order' as const, id: 'boardGroups', before: ['x', 'y'], after: ['y', 'x'] }] };
+    expect(validateOperation(foreign)).toBe(foreign);
+    expect(applyOperation(base, foreign).project).toBeNull();
+  });
+
+  it.each(['addition', 'deletion'])('does not allow a reorder to hide a group %s in the same operation', change => {
+    const base = groupedFixture();
+    const op = operation(base, p => p.boardGroups.reverse());
+    op.changes.push(
+      change === 'addition'
+        ? { collection: 'boardGroups', id: 'new-group', before: null, after: { ...base.boardGroups[1], id: 'new-group' } }
+        : { collection: 'boardGroups', id: 'two', before: base.boardGroups[1], after: null },
+    );
+    expect(() => validateOperation(op)).toThrow();
+    expect(() => validateOperation({ ...op, changes: [...op.changes].reverse() })).toThrow();
+  });
+
+  it('leaves creation and deletion as ordinary record operations', () => {
+    const base = groupedFixture();
+    const add = operation(base, p => {
+      p.boardGroups.push({ ...p.boardGroups[1], id: 'new-group' });
+    });
+    const remove = operation(base, p => {
+      p.boardGroups.pop();
+    });
+    expect(add.changes.map(c => c.collection)).toEqual(['boardGroups']);
+    expect(remove.changes.map(c => c.collection)).toEqual(['boardGroups']);
+  });
+});
+
 describe('conditional record operations', () => {
   it.each([false, true])('retains two independent notes in either arrival order (reverse=%s)', reverse => {
     const base = fixture();
