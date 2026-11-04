@@ -300,7 +300,7 @@ export type SavedIn = { kind: 'browser' } | { kind: 'file'; path: string; moved:
 const LOCKED =
   "This browser doesn't have Margin's key yet. Your work is safe in Margin's data file on this computer. To open it here, run npm run open in the Margin folder.";
 const NOT_RUNNING =
-  "Margin's local server isn't answering. Your saved work is unchanged. Start Margin again (npm run dev) and reload this page.";
+  "Margin's local server isn't answering. This request could not be confirmed. Keep this window open, start Margin again (npm run dev), then reload to check the saved project. Recoverable writing stays separately in this browser.";
 
 /**
  * Projects in margin.sqlite, through the local server (server/store.mjs). The server applies each save in one

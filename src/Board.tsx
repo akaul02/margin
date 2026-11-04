@@ -44,6 +44,7 @@ import {
   uid,
   type BoardComment,
   type BoardGroup,
+  type BoardNote,
   type Project,
   type Quote,
 } from './model';
@@ -329,9 +330,38 @@ export function QuoteBoard({
     if (writing?.id === id)
       return (
         <NoteDraft
+          projectId={p.id}
+          groupId={columnId === UNGROUPED ? undefined : columnId}
+          note={n}
           initial={n.text}
-          save={text => change(next => editBoardNote(next, id, text), 'Note saved.')}
-          remove={() => change(next => removeBoardNote(next, id), 'Note deleted.')}
+          save={(text, base) =>
+            change(next => {
+              if (
+                !equal(
+                  next.boardNotes.find(note => note.id === id),
+                  base,
+                )
+              )
+                throw new Error(
+                  'This note changed while you were writing. Your draft is kept in Draft recovery; save it as a separate note to keep both.',
+                );
+              editBoardNote(next, id, text);
+            }, 'Note saved.')
+          }
+          remove={base =>
+            change(next => {
+              if (
+                !equal(
+                  next.boardNotes.find(note => note.id === id),
+                  base,
+                )
+              )
+                throw new Error(
+                  'This note changed while you were writing. Review its latest version before deleting it. Your draft is kept.',
+                );
+              removeBoardNote(next, id);
+            }, 'Note deleted.')
+          }
           close={() => setWriting(w => (w?.id === id ? null : w))}
         />
       );
@@ -440,10 +470,20 @@ export function QuoteBoard({
         <div className="board-stack">
           {adding && (
             <NoteDraft
+              projectId={p.id}
+              groupId={c.id}
               initial=""
-              save={async text => {
+              save={async (text, _base, draftId) => {
                 const ok = await change(next => {
-                  created = addBoardNote(next, c.id, text, rememberedName()).id;
+                  if (next.boardNotes.some(note => note.id === draftId))
+                    throw new Error(
+                      'This draft was already saved in another tab. Keep newer writing through Draft recovery as a separate note.',
+                    );
+                  const note = addBoardNote(next, c.id, text, rememberedName());
+                  const target = next.boardGroups.find(group => group.id === c.id)!;
+                  target.noteIds = target.noteIds!.map(id => (id === note.id ? draftId : id));
+                  note.id = draftId;
+                  created = note.id;
                 }, 'Note added.');
                 if (ok) setSettled(created);
                 return ok;
@@ -597,19 +637,32 @@ export function QuoteBoard({
 }
 /** Writing a note in place. Enter or leaving the box saves; Escape puts it away unchanged. */
 function NoteDraft({
+  projectId,
+  groupId,
+  note,
   initial,
   save,
   remove,
   close,
 }: {
+  projectId: string;
+  groupId?: string;
+  note?: BoardNote;
   initial: string;
-  save: (text: string) => Promise<boolean>;
-  remove?: () => Promise<boolean>;
+  save: (text: string, base: BoardNote | undefined, draftId: string) => Promise<boolean>;
+  remove?: (base?: BoardNote) => Promise<boolean>;
   close: () => void;
 }) {
-  const [text, setText] = useState(initial),
-    [busy, setBusy] = useState(false);
+  const base = useRef(note).current;
+  const initialText = useRef(initial).current;
+  const draft = useDurableDraft(
+    { projectId, groupId, kind: 'board-note', label: 'Unfinished board note', entityId: base?.id, base },
+    { text: initial, by: base?.by ?? rememberedName() },
+  );
+  const text = draft.value.text;
+  const [busy, setBusy] = useState(false);
   const area = useRef<HTMLTextAreaElement>(null);
+  const editor = useRef<HTMLDivElement>(null);
   const done = useRef(false);
   useEffect(() => {
     const el = area.current;
@@ -618,23 +671,44 @@ function NoteDraft({
     el.setSelectionRange(el.value.length, el.value.length);
     el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }, []);
+  useEffect(() => {
+    // If browser storage is unavailable, an in-app navigation must not silently
+    // discard the only copy. Keyboard activation also dispatches a click.
+    const guard = (e: globalThis.MouseEvent) => {
+      if (
+        !draft.error ||
+        !draft.dirty ||
+        editor.current?.contains(e.target as Node) ||
+        (e.target as Element | null)?.closest('a[download]')
+      )
+        return;
+      if (!window.confirm('This writing could not be stored. Download or copy it before leaving. Leave this editor?')) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        area.current?.focus();
+      }
+    };
+    document.addEventListener('click', guard, true);
+    return () => document.removeEventListener('click', guard, true);
+  }, [draft.error, draft.dirty]);
   async function finish(how: 'save' | 'cancel' | 'remove') {
     if (done.current) return;
     done.current = true;
+    const submitted = draft.value;
     const body = text.trim();
     let ok = true;
-    if (how === 'remove' || (how === 'save' && body && body !== initial.trim())) {
+    if (how === 'remove' || (how === 'save' && body && body !== initialText.trim())) {
       setBusy(true);
-      ok = await (how === 'remove' ? remove!() : save(body));
+      ok = await (how === 'remove' ? remove!(base) : save(body, base, draft.id));
       setBusy(false);
     }
     // A failed save keeps the writing open so nothing is lost.
-    if (ok) close();
+    if (ok && draft.clear(submitted)) close();
     else done.current = false;
   }
   const keepFocus = (e: MouseEvent) => e.preventDefault();
   return (
-    <div className="wall-note board-note writing">
+    <div ref={editor} className="wall-note board-note writing">
       <textarea
         ref={area}
         className="note-input"
@@ -643,7 +717,7 @@ function NoteDraft({
         value={text}
         maxLength={MAX_NOTE}
         disabled={busy}
-        onChange={e => setText(e.target.value)}
+        onChange={e => draft.update({ ...draft.value, text: e.target.value })}
         onKeyDown={e => {
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -654,8 +728,14 @@ function NoteDraft({
             void finish('cancel');
           }
         }}
-        onBlur={() => setTimeout(() => void finish('save'))}
+        onBlur={e => {
+          if (editor.current?.contains(e.relatedTarget as Node)) return;
+          // A blocked draft write needs explicit Done or a local download. Do
+          // not close the editor as a side effect of its warning/download UI.
+          if (!draft.error) setTimeout(() => void finish('save'));
+        }}
       />
+      <DraftStatus draft={draft} savedText="Writing draft saved in this browser. Done saves the note; Escape discards this draft." />
       <div className="note-tools">
         {remove ? (
           <button type="button" className="text-button note-delete" onMouseDown={keepFocus} onClick={() => void finish('remove')}>

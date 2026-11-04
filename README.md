@@ -57,6 +57,8 @@ Margin is private by default. Work stays on the researcher's own computer unless
 | Your computer (`npm run dev`) | `margin.sqlite` in Margin's data folder | Your user account. A browser also needs the folder's key, which `npm run open` passes to it. |
 | Hosted, if your lab sets it up | Your lab's own Supabase project | Only accounts you invite, and only for the projects they were added to. |
 
+Project changes save automatically. The save strip shows when storage has acknowledged a save, and **Save backup** downloads a project copy. Unfinished writing is kept separately in this browser’s **Draft recovery**, including inline board notes. [Saving and recovery](docs/SAVING.md) explains refreshes, conflicts, clearing data, and moving devices.
+
 On your computer, clearing browser data does not touch your projects. The data folder is `~/Library/Application Support/Margin` on macOS, `~/.local/share/margin` on Linux and `%APPDATA%\Margin` on Windows. Set `MARGIN_DATA_DIR` to keep it somewhere else, or `MARGIN_STORAGE=browser` to save in the browser instead. The file is not encrypted, so keep disk encryption (FileVault or BitLocker) on, and export backups now and then. The first time a browser opens the data file, any projects it already had are copied into the file.
 
 Hosting is never switched on from inside the app. It is a separate deployment with sign-in, described in [docs/HOSTING.md](docs/HOSTING.md). Check that your IRB protocol allows a cloud database before uploading real transcripts.

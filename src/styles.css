@@ -4842,3 +4842,32 @@ body {
 dialog {
   zoom: var(--text-zoom, 1);
 }
+
+/* Keep local persistence feedback outside inert editing areas, including during a save. */
+.local-save-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px 16px;
+  padding: 4px 24px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.local-save-bar p {
+  margin: 0;
+}
+.local-save-bar button {
+  font-size: 13px;
+  min-height: 44px;
+}
+.local-save-bar .local-save-error {
+  color: var(--ink);
+  font-weight: 700;
+}
+@media (max-width: 700px) {
+  .local-save-bar {
+    justify-content: space-between;
+    padding-inline: 16px;
+  }
+}

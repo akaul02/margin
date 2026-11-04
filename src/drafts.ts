@@ -3,7 +3,7 @@ import { useRef, useState, useEffect } from 'react';
 import { equal } from '../shared/operations.mjs';
 import { uid, now } from './model';
 
-export type DraftKind = 'note' | 'memo' | 'comparison' | 'group' | 'code' | 'theme';
+export type DraftKind = 'note' | 'board-note' | 'memo' | 'comparison' | 'group' | 'code' | 'theme';
 export type Draft = {
   id: string;
   generation?: number;
@@ -14,6 +14,7 @@ export type Draft = {
   updatedAt: string;
   entityId?: string;
   quoteId?: string;
+  groupId?: string;
   base?: any;
   links?: string[];
   data: Record<string, any>;
@@ -22,6 +23,7 @@ const prefixFor = (namespace = '') => (namespace ? `margin-account-writing-v1:${
 const changed = () => window.dispatchEvent(new Event('margin-drafts-changed'));
 const writingFields: Record<DraftKind, string[]> = {
   note: ['by', 'body'],
+  'board-note': ['by', 'text'],
   memo: ['title', 'body'],
   comparison: ['title', 'body'],
   group: ['title'],
@@ -43,7 +45,7 @@ function validDraft(value: unknown): value is Draft {
     return false;
   if (typeof value.kind !== 'string' || !Object.hasOwn(writingFields, value.kind)) return false;
   if (value.generation !== undefined && (!Number.isSafeInteger(value.generation) || value.generation < 0)) return false;
-  if (['entityId', 'quoteId'].some(key => value[key] !== undefined && !identifier(value[key]))) return false;
+  if (['entityId', 'quoteId', 'groupId'].some(key => value[key] !== undefined && !identifier(value[key]))) return false;
   if (value.links !== undefined && (!Array.isArray(value.links) || !value.links.every(identifier))) return false;
   if (!writingFields[value.kind as DraftKind].every(key => typeof value.data[key] === 'string')) return false;
   if (
@@ -182,11 +184,12 @@ export function useDurableDraft<T extends Record<string, any>>(scope: Omit<Draft
       setError('');
       return true;
     } catch {
-      setError('Your project saved, but this recovery draft could not be removed. It remains available in Draft recovery.');
+      setError('This recovery draft could not be removed. It remains available in Draft recovery.');
       return false;
     }
   }
   return {
+    id: id.current,
     value,
     update,
     clear,

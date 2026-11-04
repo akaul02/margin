@@ -2,15 +2,21 @@ import { useWorkspaceServices } from './WorkspaceContext';
 import { useEffect, useState } from 'react';
 import { equal } from '../shared/operations.mjs';
 import { draftArchive, readDraftRecovery, removeDraft, type Draft } from './drafts';
-import { download, now, required, uid, type Project } from './model';
+import { addBoardNote, editBoardNote, download, now, required, uid, type Project } from './model';
 import { Dialog, ErrorBox } from './ui';
 import type { Change } from './Workbench';
 
-export function DraftStatus({ draft }: { draft: { saved: boolean; error: string; raw: () => string } }) {
+export function DraftStatus({
+  draft,
+  savedText = 'Writing draft saved on this device. Closing keeps it in Draft recovery.',
+}: {
+  draft: { saved: boolean; error: string; raw: () => string };
+  savedText?: string;
+}) {
   return (
     <>
       <p className="small muted" role="status">
-        {draft.saved ? 'Writing draft saved on this device. Closing keeps it in Draft recovery.' : ''}
+        {draft.saved ? savedText : ''}
       </p>
       <ErrorBox error={draft.error} />
       {draft.error && (
@@ -25,6 +31,7 @@ export function DraftStatus({ draft }: { draft: { saved: boolean; error: string;
 const fieldNames: Record<string, string> = {
   by: 'Writer',
   body: 'Your writing',
+  text: 'Your writing',
   title: 'Title',
   name: 'Code name',
   description: 'Definition',
@@ -77,7 +84,29 @@ export function DraftRecovery({ project, change, workspaceError }: { project: Pr
       const ok = await change(p => {
         const date = now(),
           data = d.data;
-        if (d.kind === 'note') {
+        if (d.kind === 'board-note') {
+          if (!d.entityId && !separate && p.boardNotes.some(n => n.id === d.id))
+            throw new Error('An earlier generation of this draft was already restored. Save this newer writing as a separate note.');
+          const existing = d.entityId ? p.boardNotes.find(n => n.id === d.entityId) : undefined;
+          if (d.entityId && !separate && (!existing || !equal(existing, d.base)))
+            throw new Error(
+              'This board note changed or was removed after the draft began. Save the recovered writing as a separate note to keep both versions.',
+            );
+          if (existing && !separate) {
+            // Keep the note's current placement: moving it does not discard its writing.
+            editBoardNote(p, existing.id, data.text);
+          } else {
+            const target = d.groupId ? p.boardGroups.find(g => g.id === d.groupId) : undefined;
+            if (d.groupId && !target && !separate)
+              throw new Error('The original board group was removed. Save this writing as a separate note in Ungrouped.');
+            const note = addBoardNote(p, target?.id ?? null, data.text, data.by);
+            if (!separate) {
+              // A stable ID makes another recovery of the same draft detectable.
+              if (target?.noteIds) target.noteIds = target.noteIds.map(id => (id === note.id ? d.id : id));
+              note.id = d.id;
+            }
+          }
+        } else if (d.kind === 'note') {
           if (!d.entityId && !separate && p.comments.some(c => c.id === d.id))
             throw new Error('An earlier generation of this draft was already restored. Save this newer writing as a separate note.');
           if (!p.quotes.some(q => q.id === d.quoteId))
@@ -186,14 +215,18 @@ export function DraftRecovery({ project, change, workspaceError }: { project: Pr
               ))}
               <div className="button-row wrap">
                 <button onClick={() => download('margin-writing-draft.json', JSON.stringify(d, null, 2))}>Download this draft</button>
-                {['note', 'memo', 'comparison'].includes(d.kind) && (
+                {['note', 'board-note', 'memo', 'comparison'].includes(d.kind) && (
                   <>
                     <button disabled={busy} onClick={() => restore(d)}>
                       Restore saved writing
                     </button>
-                    {(d.entityId || project.comments.some(c => c.id === d.id) || project.memos.some(m => m.id === d.id)) && (
+                    {(d.entityId ||
+                      project.comments.some(c => c.id === d.id) ||
+                      project.memos.some(m => m.id === d.id) ||
+                      project.boardNotes.some(n => n.id === d.id) ||
+                      (d.kind === 'board-note' && d.groupId && !project.boardGroups.some(g => g.id === d.groupId))) && (
                       <button disabled={busy} onClick={() => restore(d, true)}>
-                        Save as a separate {d.kind === 'note' ? 'note' : 'memo'}
+                        Save as a separate {d.kind === 'note' || d.kind === 'board-note' ? 'note' : 'memo'}
                       </button>
                     )}
                   </>

@@ -91,7 +91,7 @@ type View = 'board' | 'read' | 'quotes' | 'memos' | 'workbench';
 export default function App() {
   const services = useWorkspaceServices(),
     { hosted } = services;
-  const { loadWorkspace, rawWorkspace, saveWorkspace, deleteProjectStorage, savedIn } = services.storage;
+  const { loadWorkspace, rawWorkspace, saveWorkspace: writeWorkspace, deleteProjectStorage, savedIn } = services.storage;
   const { createRoom, readRoom, writeRoom, watchRoom, sendOperation, assertShareableProject, assertShareableEdit } = services.collaboration;
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const workspaceRef = useRef<Workspace | null>(null);
@@ -103,6 +103,26 @@ export default function App() {
   const [notice, setNotice] = useState('');
   const [savedTo, setSavedTo] = useState<SavedIn>({ kind: 'browser' });
   const [saving, setSaving] = useState(false);
+  const [localSave, setLocalSave] = useState<{ phase: 'saving' | 'saved' | 'error'; message?: string }>({ phase: 'saved' });
+  const localWrites = useRef({ pending: 0, latest: 0, outcome: { phase: 'saved' } as typeof localSave });
+  async function trackLocalSave(write: () => Promise<void>) {
+    const writes = localWrites.current;
+    const attempt = ++writes.latest;
+    writes.pending++;
+    setLocalSave({ phase: 'saving' });
+    try {
+      await write();
+      if (attempt === writes.latest) writes.outcome = { phase: 'saved' };
+    } catch (e) {
+      if (attempt === writes.latest) writes.outcome = { phase: 'error', message: (e as Error).message };
+      throw e;
+    } finally {
+      // An older acknowledgement must not hide a newer write or its failure.
+      writes.pending--;
+      if (!writes.pending) setLocalSave(writes.outcome);
+    }
+  }
+  const saveWorkspace = (...args: Parameters<typeof writeWorkspace>) => trackLocalSave(() => writeWorkspace(...args));
   const lock = useRef(false);
   const [view, setView] = useState<View>(() => {
     try {
@@ -356,7 +376,7 @@ export default function App() {
     }
   }
   async function checkShared(projectId: string) {
-    if (lock.current || document.querySelector('dialog[open]')) return;
+    if (lock.current || document.querySelector('dialog[open], .board-note.writing')) return;
     const current = workspaceRef.current,
       connection = current?.connections?.[projectId];
     if (!current || !connection || current.activeId !== projectId) return;
@@ -373,7 +393,7 @@ export default function App() {
         return;
       }
       const remote = await readRoom(connection.roomId);
-      if (lock.current || document.querySelector('dialog[open]') || workspaceRef.current !== current) return;
+      if (lock.current || document.querySelector('dialog[open], .board-note.writing') || workspaceRef.current !== current) return;
       const local = current.projects.find(p => p.id === projectId)!;
       if (remote.project.id !== projectId) throw new Error('The room project identity does not match. Your local work is unchanged.');
       if (connection.dirty) {
@@ -688,7 +708,7 @@ export default function App() {
     setSaving(true);
     setError('');
     try {
-      await deleteProjectStorage(next, current.revision, p.id);
+      await trackLocalSave(() => deleteProjectStorage(next, current.revision, p.id));
       adoptWorkspace(next);
       removeProjectDrafts(p.id, services.namespace);
       forgetProjectPrefs(p.id);
@@ -906,6 +926,44 @@ export default function App() {
           )}
         </div>
       </header>
+      {project && (
+        <section className="local-save-bar" aria-label="Saving and backups">
+          <p
+            className={localSave.phase === 'error' ? 'local-save-error' : ''}
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            title={
+              localSave.phase === 'error'
+                ? localSave.message
+                : savedTo.kind === 'file'
+                  ? `Project changes save automatically to ${savedTo.path}. Writing drafts stay separately in this browser.`
+                  : 'Project changes save automatically in this browser. Clearing site data removes them. Writing drafts stay separately in this browser.'
+            }
+          >
+            {localSave.phase === 'saving'
+              ? 'Saving project…'
+              : localSave.phase === 'error'
+                ? 'Project save needs attention'
+                : savedTo.kind === 'file'
+                  ? 'Project saved on this computer'
+                  : 'Project saved in this browser'}
+          </p>
+          <button
+            type="button"
+            className="text-button"
+            disabled={saving}
+            title="Download the saved project. Unfinished writing stays in Draft recovery and is not included."
+            onClick={() => {
+              download(`${exportName}.margin.json`, exportProject(project));
+              setNotice('Project backup download requested. Unfinished writing stays separately in Draft recovery.');
+            }}
+          >
+            <ArrowDownToLine size={16} aria-hidden="true" />
+            Save backup
+          </button>
+        </section>
+      )}
       {!!workspace.quarantined?.length && (
         <div className="recovery-banner" role="alert">
           <span>
@@ -1670,7 +1728,7 @@ export default function App() {
             <button
               onClick={() => {
                 download(`${exportName}.margin.json`, exportProject(project));
-                setNotice('Project backup downloaded.');
+                setNotice('Project backup download requested. Unfinished writing stays separately in Draft recovery.');
               }}
             >
               <FolderOpen size={23} />
@@ -1709,7 +1767,8 @@ export default function App() {
             {savedTo.kind === 'file'
               ? `Projects are saved in ${savedTo.path}. Keep regular project backups somewhere you trust.`
               : 'Browser storage can be cleared. Keep regular project backups somewhere you trust.'}{' '}
-            CSV protects spreadsheet formula cells; the JSON backup preserves all text exactly.
+            This backup includes saved project changes. Unfinished writing stays separately in this browser’s Draft recovery; restore it
+            before exporting to include it. CSV protects spreadsheet formula cells; the JSON backup preserves all saved text exactly.
           </p>
         </Dialog>
       )}
@@ -1733,8 +1792,13 @@ export default function App() {
             {hosted
               ? 'Projects save in this browser. Shared projects also save to your lab workspace, visible only to people you invite.'
               : savedTo.kind === 'file'
-                ? `Everything saves to ${savedTo.path} on this computer. Use Export now and then to keep a backup file too.`
-                : 'Everything saves in this browser. Use Export now and then to keep a backup file.'}
+                ? `Project changes save automatically to ${savedTo.path} on this computer. Use Save backup to keep a separate copy.`
+                : 'Project changes save automatically in this browser. Clearing site data removes them. Use Save backup to keep a separate copy.'}
+          </p>
+          <p className="small muted">
+            Notes and memo drafts are kept separately in this browser’s Draft recovery until you save them to the project. Clearing browser
+            data removes these drafts even when your projects are saved in a file. Backups move saved work between devices; local saving
+            does not sync devices.
           </p>
           <div className="dialog-actions">
             <button

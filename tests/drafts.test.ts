@@ -61,3 +61,14 @@ it('scopes draft IDs by project and does not attribute another project’s damag
   expect(readDraftRecovery('synthetic-project')).toMatchObject({ damaged: 0 });
   expect(readDrafts('synthetic-project')).toHaveLength(1);
 });
+it('keeps board-note writing and placement while isolating damaged placement or text', () => {
+  const board = { ...draft, kind: 'board-note', groupId: 'synthetic-group', data: { text: 'Unfinished board writing.', by: '' } };
+  put('board', board);
+  put('ungrouped', { ...board, id: 'ungrouped', groupId: undefined });
+  put('bad-group', { ...board, id: 'bad-group', groupId: { broken: true } });
+  put('bad-text', { ...board, id: 'bad-text', data: { text: 42, by: '' } });
+  const result = readDraftRecovery();
+  expect(result.damaged).toBe(2);
+  expect(result.drafts).toHaveLength(2);
+  expect(result.drafts.find(d => d.id === draft.id)).toMatchObject({ groupId: 'synthetic-group', data: board.data });
+});

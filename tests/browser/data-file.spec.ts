@@ -71,6 +71,7 @@ test('work saves to the file and survives clearing the browser', async ({ page, 
   renameProject(p, 'Written in the data file');
   await importProject(page, p);
   await expect.poll(savedProjects).toContain('Written in the data file');
+  await expect(page.getByRole('status').filter({ hasText: 'Project saved on this computer' })).toBeVisible();
 
   // A brand-new browser profile with the key sees the same projects.
   const fresh = await browser.newContext();
@@ -90,7 +91,7 @@ test('work saves to the file and survives clearing the browser', async ({ page, 
 test('the export dialog says where the file is', async ({ page }) => {
   await page.goto(`/#key=${key()}`);
   await page.getByRole('button', { name: 'Help and keyboard guide' }).click();
-  await expect(page.getByText(`Everything saves to ${join(dataDir, 'margin.sqlite')} on this computer.`)).toBeVisible();
+  await expect(page.getByText(`Project changes save automatically to ${join(dataDir, 'margin.sqlite')} on this computer.`)).toBeVisible();
 });
 
 test('restore points are kept in the file and can be restored', async ({ page }) => {
@@ -108,4 +109,62 @@ test('restore points are kept in the file and can be restored', async ({ page })
   await page.reload();
   await page.getByRole('button', { name: 'Board', exact: true }).click();
   await expect(page.getByText('A group to undo')).toHaveCount(0);
+});
+
+test('the save indicator waits for the local file acknowledgement', async ({ page }) => {
+  await page.goto(`/#key=${key()}`);
+  await page.getByRole('button', { name: 'Board', exact: true }).click();
+  await page.getByRole('button', { name: 'New group', exact: true }).click();
+  await page.getByLabel('Group name', { exact: true }).fill('Acknowledged local save');
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => {
+    release = resolve;
+  });
+  await page.route('**/api/store/workspace', async route => {
+    if (route.request().method() === 'PUT') await gate;
+    await route.continue();
+  });
+  try {
+    await page.getByRole('button', { name: 'Create group', exact: true }).click();
+    await expect(page.locator('.local-save-bar [role="status"]')).toHaveText('Saving project…');
+  } finally {
+    release();
+  }
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('status').filter({ hasText: 'Project saved on this computer' })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('region', { name: 'Acknowledged local save quote group' })).toBeVisible();
+});
+
+test('a lost file-save response keeps the draft and reload finds the committed note once', async ({ page }) => {
+  await page.goto(`/#key=${key()}`);
+  await page.getByRole('button', { name: 'Board', exact: true }).click();
+  await page.getByRole('button', { name: 'Add note to Acknowledged local save', exact: true }).click();
+  await page.getByLabel('Note', { exact: true }).fill('Committed before the response was lost.');
+  let committed = false;
+  await page.route('**/api/store/workspace', async route => {
+    if (route.request().method() === 'PUT') {
+      // Chromium may retry a failed connection. Commit once, then drop every
+      // response for this request so retries cannot turn the injected loss into a conflict response.
+      if (!committed) {
+        const response = await route.fetch();
+        expect(response.ok()).toBe(true);
+        committed = true;
+      }
+      await route.abort('failed');
+    } else await route.continue();
+  });
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(page.locator('.local-save-bar [role="status"]')).toHaveText('Project save needs attention');
+  await expect(page.getByRole('alert')).toContainText('This request could not be confirmed');
+  await expect(page.getByLabel('Note', { exact: true })).toHaveValue('Committed before the response was lost.');
+  await page.unroute('**/api/store/workspace');
+  page.once('dialog', dialog => dialog.accept());
+  await page.reload();
+  await expect(page.locator('.note-words').filter({ hasText: 'Committed before the response was lost.' })).toHaveCount(1);
+  await page.getByRole('button', { name: 'Review saved drafts', exact: true }).click();
+  await page.getByRole('button', { name: 'Restore saved writing', exact: true }).click();
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('already restored');
+  await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
+  await expect(page.locator('.note-words').filter({ hasText: 'Committed before the response was lost.' })).toHaveCount(1);
 });
